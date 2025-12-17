@@ -1,0 +1,29 @@
+{
+  "name": "agent-state-machine",
+  "version": "1.0.0",
+  "description": "A workflow orchestrator for running agents and scripts in sequence with state management",
+  "main": "lib/index.js",
+  "bin": {
+    "state-machine": "./bin/cli.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "agent",
+    "state-machine",
+    "workflow",
+    "orchestrator",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "templates"
+  ]
+}
