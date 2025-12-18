@@ -54,39 +54,65 @@ workflows/<name>/
 
 ```js
 /**
+/**
  * project-builder Workflow
  *
  * Native JavaScript workflow - write normal async/await code!
  *
  * Features:
- * - agent() calls are automatically cached for resume/idempotency
- * - memory object auto-persists to disk
+ * - memory object auto-persists to disk (use memory guards for idempotency)
  * - Use standard JS control flow (if, for, etc.)
+ * - Interactive prompts pause and wait for user input
  */
 
 import { agent, memory, initialPrompt, parallel } from 'agent-state-machine';
+import { notify } from './scripts/mac-notification.js';
 
+// Model configuration (also supports models in a separate config export)
 export const config = {
   models: {
-    fast: "claude -p",
-    smart: "claude -m claude-sonnet-4-20250514 -p",
-    genius: "claude -m claude-opus-4-20250514 -p",
+    low: "gemini",
+    med: "codex --model gpt-5.2",
+    high: "claude -m claude-opus-4-20250514 -p",
+  },
+  apiKeys: {
+    gemini: process.env.GEMINI_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    openai: process.env.OPENAI_API_KEY,
   }
 };
 
 export default async function() {
-  const name = await initialPrompt('What is your name?');
-  memory.userName = name;
+  console.log('Starting project-builder workflow...');
 
-  const result = await agent('example', { name });
-  memory.lastResult = result;
+  // Example: Get user input (saved to memory)
+  const answer = await initialPrompt('Where do you live?');
+  console.log('Example prompt answer:', answer);
 
-  const [a, b] = await parallel([
-    agent('example', { which: 'a' }),
-    agent('example', { which: 'b' })
-  ]);
+  const userInfo = await agent('yoda-name-collector');
+  memory.userInfo = userInfo;
 
-  console.log(a, b);
+  // Provide context
+  // const userInfo = await agent('yoda-name-collector', { name: 'Luke' });
+
+  console.log('Example agent memory.userInfo:', memory.userInfo || userInfo);
+
+  // Context is provided automatically
+  const { greeting } = await agent('yoda-greeter');
+  console.log('Example agent greeting:', greeting);
+
+  // Or you can provide context manually
+  // await agent('yoda-greeter', userInfo);
+
+  // Example: Parallel execution
+  // const [a, b] = await parallel([
+  //   agent('example', { which: 'a' }),
+  //   agent('example', { which: 'b' })
+  // ]);
+
+  notify(['project-builder', userInfo.name || userInfo + ' has been greeted!']);
+
+  console.log('Workflow completed!');
 }
 ```
 
