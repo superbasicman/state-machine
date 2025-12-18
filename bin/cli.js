@@ -1,24 +1,25 @@
 #!/usr/bin/env node
 
-const path = require('path');
-const fs = require('fs');
-const { StateMachine } = require('../lib');
-const { setup } = require('../lib/setup');
+import path from 'path';
+import fs from 'fs';
+import { pathToFileURL } from 'url';
+import { WorkflowRuntime } from '../lib/index.js';
+import { setup } from '../lib/setup.js';
 
 const args = process.argv.slice(2);
 const command = args[0];
 
 function printHelp() {
   console.log(`
-Agent State Machine CLI
+Agent State Machine CLI (Native JS Workflows Only)
 
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
   state-machine run <workflow-name>        Run a workflow from the beginning
-  state-machine resume <workflow-name>     Resume a failed/stopped workflow
-  state-machine status [workflow-name]     Show current state
-  state-machine history [workflow-name]    Show execution history
-  state-machine reset [workflow-name]      Reset workflow state
+  state-machine resume <workflow-name>     Resume a paused workflow
+  state-machine status [workflow-name]     Show current state (or list all)
+  state-machine history <workflow-name> [limit]  Show execution history
+  state-machine reset <workflow-name>      Reset workflow state
   state-machine list                       List all workflows
   state-machine help                       Show this help
 
@@ -26,20 +27,118 @@ Options:
   --setup, -s     Initialize a new workflow with directory structure
   --help, -h      Show help
 
-Examples:
-  state-machine --setup my-workflow        Creates workflows/my-workflow/
-  state-machine run my-workflow            Runs the my-workflow workflow
-  state-machine resume my-workflow         Resumes from last failed step
-  state-machine status my-workflow         Shows my-workflow state
-
 Workflow Structure:
   workflows/<name>/
-  ├── workflow.js        # Workflow definition
-  ├── agents/            # Custom agents (.js or .md)
-  ├── scripts/           # Custom scripts  
-  ├── state/             # State files (current.json, history.jsonl)
-  └── steering/          # Steering configuration (global.md)
+  ├── workflow.js        # Native JS workflow (async/await)
+  ├── package.json       # Sets "type": "module" for this workflow folder
+  ├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
+  ├── interactions/      # Human-in-the-loop files (auto-created)
+  ├── state/             # current.json, history.jsonl, generated-prompt.md
+  └── steering/          # global.md + config.json
 `);
+}
+
+function workflowsRoot() {
+  return path.join(process.cwd(), 'workflows');
+}
+
+function resolveWorkflowDir(workflowName) {
+  return path.join(workflowsRoot(), workflowName);
+}
+
+function resolveWorkflowEntry(workflowDir) {
+  const candidates = ['workflow.js', 'workflow.mjs'];
+  for (const f of candidates) {
+    const p = path.join(workflowDir, f);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function readState(workflowDir) {
+  const stateFile = path.join(workflowDir, 'state', 'current.json');
+  if (!fs.existsSync(stateFile)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function summarizeStatus(state) {
+  if (!state) return ' [no state]';
+
+  const s = String(state.status || '').toUpperCase();
+  if (s === 'COMPLETED') return ' [completed]';
+  if (s === 'FAILED') return ' [failed - can resume]';
+  if (s === 'PAUSED') return ' [paused - can resume]';
+  if (s === 'RUNNING') return ' [running]';
+  if (s === 'IDLE') return ' [idle]';
+  return state.status ? ` [${state.status}]` : '';
+}
+
+function listWorkflows() {
+  const root = workflowsRoot();
+
+  if (!fs.existsSync(root)) {
+    console.log('No workflows directory found.');
+    console.log('Run `state-machine --setup <name>` to create your first workflow.');
+    return;
+  }
+
+  const workflows = fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (workflows.length === 0) {
+    console.log('No workflows found.');
+    console.log('Run `state-machine --setup <name>` to create your first workflow.');
+    return;
+  }
+
+  console.log('\nAvailable Workflows:');
+  console.log('─'.repeat(40));
+
+  for (const name of workflows) {
+    const dir = resolveWorkflowDir(name);
+    const entry = resolveWorkflowEntry(dir);
+    const state = readState(dir);
+
+    const entryNote = entry ? '' : ' [missing workflow.js]';
+    const statusNote = summarizeStatus(state);
+
+    const pausedNote =
+      state && state._pendingInteraction && state._pendingInteraction.file
+        ? ` [needs input: ${state._pendingInteraction.file}]`
+        : '';
+
+    console.log(`  ${name}${entryNote}${statusNote}${pausedNote}`);
+  }
+
+  console.log('');
+}
+
+async function runOrResume(workflowName) {
+  const workflowDir = resolveWorkflowDir(workflowName);
+
+  if (!fs.existsSync(workflowDir)) {
+    console.error(`Error: Workflow '${workflowName}' not found at ${workflowDir}`);
+    console.error(`Run: state-machine --setup ${workflowName}`);
+    process.exit(1);
+  }
+
+  const entry = resolveWorkflowEntry(workflowDir);
+  if (!entry) {
+    console.error(`Error: No workflow entry found (expected workflow.js or workflow.mjs) in ${workflowDir}`);
+    process.exit(1);
+  }
+
+  const runtime = new WorkflowRuntime(workflowDir);
+  const workflowUrl = pathToFileURL(entry).href;
+
+  await runtime.runWorkflow(workflowUrl);
 }
 
 async function main() {
@@ -48,7 +147,6 @@ async function main() {
     process.exit(0);
   }
 
-  // Handle --setup / -s
   if (command === '--setup' || command === '-s') {
     const workflowName = args[1];
     if (!workflowName) {
@@ -60,50 +158,61 @@ async function main() {
     process.exit(0);
   }
 
-  // Handle other commands
   const workflowName = args[1];
-  const sm = new StateMachine(workflowName);
 
   switch (command) {
     case 'run':
-      if (!workflowName) {
-        console.error('Error: Workflow name required');
-        console.error('Usage: state-machine run <workflow-name>');
-        process.exit(1);
-      }
-      try {
-        await sm.run();
-      } catch (err) {
-        console.error('Error:', err.message);
-        process.exit(1);
-      }
-      break;
-
     case 'resume':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error('Usage: state-machine resume <workflow-name>');
+        console.error(`Usage: state-machine ${command} <workflow-name>`);
         process.exit(1);
       }
       try {
-        await sm.resume();
+        await runOrResume(workflowName);
       } catch (err) {
-        console.error('Error:', err.message);
+        console.error('Error:', err.message || String(err));
         process.exit(1);
       }
       break;
 
     case 'status':
-      sm.showStatus();
+      if (!workflowName) {
+        listWorkflows();
+        break;
+      }
+      {
+        const workflowDir = resolveWorkflowDir(workflowName);
+        const runtime = new WorkflowRuntime(workflowDir);
+        runtime.showStatus();
+      }
       break;
 
     case 'history':
-      const limit = parseInt(args[2]) || 20;
-      sm.showHistory(limit);
+      if (!workflowName) {
+        console.error('Error: Workflow name required');
+        console.error('Usage: state-machine history <workflow-name> [limit]');
+        process.exit(1);
+      }
+      {
+        const limit = parseInt(args[2], 10) || 20;
+        const workflowDir = resolveWorkflowDir(workflowName);
+        const runtime = new WorkflowRuntime(workflowDir);
+        runtime.showHistory(limit);
+      }
       break;
 
     case 'reset':
-      sm.reset();
+      if (!workflowName) {
+        console.error('Error: Workflow name required');
+        console.error('Usage: state-machine reset <workflow-name>');
+        process.exit(1);
+      }
+      {
+        const workflowDir = resolveWorkflowDir(workflowName);
+        const runtime = new WorkflowRuntime(workflowDir);
+        runtime.reset();
+      }
       break;
 
     case 'list':
@@ -117,63 +226,7 @@ async function main() {
   }
 }
 
-function listWorkflows() {
-  const workflowsDir = path.join(process.cwd(), 'workflows');
-
-  if (!fs.existsSync(workflowsDir)) {
-    console.log('No workflows directory found.');
-    console.log('Run `state-machine --setup <name>` to create your first workflow.');
-    return;
-  }
-
-  const workflows = fs.readdirSync(workflowsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => d.name);
-
-  if (workflows.length === 0) {
-    console.log('No workflows found.');
-    console.log('Run `state-machine --setup <name>` to create your first workflow.');
-    return;
-  }
-
-  console.log('\nAvailable Workflows:');
-  console.log('─'.repeat(40));
-  workflows.forEach(w => {
-    const workflowFileJs = path.join(workflowsDir, w, 'workflow.js');
-    const stateFile = path.join(workflowsDir, w, 'state', 'current.json');
-
-    let description = 'No description';
-    let status = '';
-
-    // Load workflow config
-    if (fs.existsSync(workflowFileJs)) {
-      try {
-        const config = require(workflowFileJs);
-        description = config.description || description;
-      } catch { }
-    }
-
-    // Load state
-    if (fs.existsSync(stateFile)) {
-      try {
-        const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-        if (state.status === 'WORKFLOW_FAILED') {
-          status = ' [FAILED - can resume]';
-        } else if (state.status === 'WORKFLOW_COMPLETED') {
-          status = ' [completed]';
-        } else if (state.status === 'RUNNING' || state.status === 'STEP_EXECUTING') {
-          status = ' [in progress]';
-        }
-      } catch { }
-    }
-
-    console.log(`  ${w}${status}`);
-    console.log(`    ${description}`);
-  });
-  console.log('');
-}
-
-main().catch(err => {
+main().catch((err) => {
   console.error('Fatal error:', err);
   process.exit(1);
 });

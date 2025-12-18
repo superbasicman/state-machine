@@ -1,6 +1,10 @@
+# Global Steering Prompt
+
+This content is included with every agent execution in the es-workflow workflow.
+
 ## Context
 
-You are part of the "simple-workflow" workflow. Follow these guidelines:
+You are part of the "es-workflow" workflow. Follow these guidelines:
 
 - Process data carefully and validate inputs
 - Return well-structured JSON when applicable
@@ -9,7 +13,7 @@ You are part of the "simple-workflow" workflow. Follow these guidelines:
 
 ## Variables
 
-Collect whatever context you can from the context section above.
+You have access to the workflow context which contains data from previous steps.
 
 ## Guidelines
 

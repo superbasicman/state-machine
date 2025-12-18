@@ -1,5 +1,5 @@
 ---
-model: med
+model: codex
 output: greeting
 ---
 

@@ -1,8 +1,12 @@
 {
   "name": "agent-state-machine",
   "version": "1.0.0",
+  "type": "module",
   "description": "A workflow orchestrator for running agents and scripts in sequence with state management",
   "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
   "bin": {
     "state-machine": "./bin/cli.js"
   },
