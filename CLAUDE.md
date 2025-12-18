@@ -25,14 +25,12 @@ state-machine --setup <workflow-name>
 # Run a workflow
 state-machine run <workflow-name>
 
-# Resume an interrupted workflow (re-runs from the top)
-state-machine resume <workflow-name>
-
 # Inspect / debug
-state-machine status <workflow-name>
+state-machine follow <workflow-name>
 state-machine history <workflow-name> [limit]
-state-machine trace-logs <workflow-name>
-state-machine reset <workflow-name>
+state-machine status <workflow-name>
+state-machine reset <workflow-name> (clears memory/state)
+state-machine reset-hard <workflow-name> (clears everything: history/interactions/memory)
 
 # List all workflows under ./workflows
 state-machine list
@@ -113,7 +111,7 @@ export default async function () {
 
 Workflows run as standard Node.js processes.
 - For persistence, use the `memory` object explicitly.
-- If a workflow is interrupted, `state-machine resume` re-runs the workflow from the top.
+- If a workflow is interrupted, `state-machine run` re-runs the workflow from the top.
 - Since interactions now **block inline**, you generally stay in the same process until completion.
 
 ---

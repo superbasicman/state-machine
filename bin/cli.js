@@ -29,13 +29,12 @@ Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
-  state-machine run <workflow-name>        Run a workflow from the beginning
-  state-machine resume <workflow-name>     Resume a paused workflow
+  state-machine run <workflow-name>        Run a workflow (loads existing state)
+  state-machine follow <workflow-name>    View prompt trace history in browser with live updates
   state-machine status [workflow-name]     Show current state (or list all)
-  state-machine history <workflow-name> [limit]  Show execution history
-  state-machine trace-logs <workflow-name>   View prompt trace history in browser
-  state-machine reset <workflow-name>      Reset workflow state
-  state-machine reset-hard <workflow-name> Hard reset (clear history/interactions)
+  state-machine history <workflow-name> [limit]  Show execution history logs
+  state-machine reset <workflow-name>      Reset workflow state (clears memory/state)
+  state-machine reset-hard <workflow-name> Hard reset (clears everything: history/interactions/memory)
   state-machine list                       List all workflows
   state-machine help                       Show this help
 
@@ -184,7 +183,6 @@ async function main() {
 
   switch (command) {
     case 'run':
-    case 'resume':
       if (!workflowName) {
         console.error('Error: Workflow name required');
         console.error(`Usage: state-machine ${command} <workflow-name>`);
@@ -224,10 +222,10 @@ async function main() {
       }
       break;
 
-    case 'trace-logs':
+    case 'follow':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error('Usage: state-machine trace-logs <workflow-name>');
+        console.error('Usage: state-machine follow <workflow-name>');
         process.exit(1);
       }
       {

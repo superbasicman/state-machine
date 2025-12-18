@@ -44,11 +44,11 @@ Requirements: Node.js >= 16.
 ```bash
 state-machine --setup <workflow-name>
 state-machine run <workflow-name>
-state-machine resume <workflow-name>
-state-machine status <workflow-name>
+
+state-machine follow <workflow-name> (view prompt trace history in browser with live updates)
 state-machine history <workflow-name> [limit]
-state-machine trace-logs <workflow-name>
-state-machine reset <workflow-name>
+state-machine reset <workflow-name> (clears memory/state)
+state-machine reset-hard <workflow-name> (clears everything: history/interactions/memory)
 ```
 
 Workflows live in:
@@ -131,13 +131,13 @@ export default async function() {
 }
 ```
 
-### How “resume” works
+### Resuming workflows
 
-`resume` restarts your workflow from the top. 
+`state-machine run` restarts your workflow from the top, loading the persisted state.
 
 If the workflow needs human input, it will **block inline** in the terminal. You’ll be told which `interactions/<slug>.md` file to edit; after you fill it in, press `y` in the same terminal session to continue.
 
-If the process is interrupted, running `state-machine resume <workflow-name>` will restart the execution. Use the `memory` object to store and skip work manually if needed.
+If the process is interrupted, running `state-machine run <workflow-name>` again will continue execution (assuming your workflow uses `memory` to skip completed steps).
 
 ---
 
@@ -293,10 +293,10 @@ export const config = {
 };
 ```
 
-The runtime captures the fully-built prompt in `state/history.jsonl`, viewable via:
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates via:
 
 ```bash
-state-machine trace-logs <workflow-name>
+state-machine follow <workflow-name>
 ```
 
 ---
