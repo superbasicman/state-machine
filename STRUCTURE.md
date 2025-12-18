@@ -41,7 +41,7 @@ your-project/
         ├── state/            # Auto-managed runtime state
         │   ├── current.json
         │   ├── history.jsonl
-        │   └── generated-prompt.md
+        │   └── prompts/   # Generated prompts history
         ├── steering/
         │   ├── config.json
         │   └── global.md     # System prompt for all agents

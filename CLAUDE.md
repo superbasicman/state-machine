@@ -31,6 +31,7 @@ state-machine resume <workflow-name>
 # Inspect / debug
 state-machine status <workflow-name>
 state-machine history <workflow-name> [limit]
+state-machine trace-logs <workflow-name>
 state-machine reset <workflow-name>
 
 # List all workflows under ./workflows
@@ -57,7 +58,7 @@ For local development, `npm link` is the simplest way to use the CLI globally.
   - LLM adapter supporting:
     - CLI invocations (e.g. `claude -p`)
     - API targets using `api:<provider>:<model>` with keys from workflow config
-  - Writes the assembled prompt to `state/generated-prompt.md`.
+  - Captures full prompt traces in `history.jsonl`.
 - `lib/index.js`
   - Public exports used by workflows and agents (`agent`, `memory`, `initialPrompt`, `parallel`, `llm`, etc.).
 
@@ -69,7 +70,7 @@ workflows/<name>/
 ├── package.json       # Sets "type": "module" for this workflow folder
 ├── agents/            # JS agents and Markdown agents
 ├── interactions/      # Human input files (created when paused)
-├── state/             # current.json, history.jsonl, generated-prompt.md
+├── state/             # current.json, history.jsonl
 └── steering/          # global.md and config.json
 ```
 
@@ -207,9 +208,7 @@ Per workflow, persisted files live under `workflows/<name>/state/`:
   - `memory`: persisted workflow memory
   - `status`: `IDLE | RUNNING | FAILED | COMPLETED`
 - `history.jsonl`
-  - event log, newest entries prepended
-- `generated-prompt.md`
-  - latest assembled prompt used by `llm()`
+  - event log, newest entries prepended (contains full prompt traces)
 
 ---
 
@@ -236,7 +235,7 @@ export const config = {
 };
 ```
 
-`llm()` writes the final prompt to `state/generated-prompt.md` before executing the CLI or API call.
+`llm()` pipes the prompt via stdin (or uses a system temp file) and logs the full trace to `history.jsonl`.
 
 ---
 ````

@@ -5,6 +5,7 @@ import fs from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
+import { startServer } from '../lib/ui/server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,6 +33,7 @@ Usage:
   state-machine resume <workflow-name>     Resume a paused workflow
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history
+  state-machine trace-logs <workflow-name>   View prompt trace history in browser
   state-machine reset <workflow-name>      Reset workflow state
   state-machine reset-hard <workflow-name> Hard reset (clear history/interactions)
   state-machine list                       List all workflows
@@ -48,7 +50,7 @@ Workflow Structure:
   ├── package.json       # Sets "type": "module" for this workflow folder
   ├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
   ├── interactions/      # Human-in-the-loop files (auto-created)
-  ├── state/             # current.json, history.jsonl, generated-prompt.md
+  ├── state/             # current.json, history.jsonl
   └── steering/          # global.md + config.json
 `);
 }
@@ -219,6 +221,23 @@ async function main() {
         const workflowDir = resolveWorkflowDir(workflowName);
         const runtime = new WorkflowRuntime(workflowDir);
         runtime.showHistory(limit);
+      }
+      break;
+
+    case 'trace-logs':
+      if (!workflowName) {
+        console.error('Error: Workflow name required');
+        console.error('Usage: state-machine trace-logs <workflow-name>');
+        process.exit(1);
+      }
+      {
+        const workflowDir = resolveWorkflowDir(workflowName);
+        if (!fs.existsSync(workflowDir)) {
+          console.error(`Error: Workflow '${workflowName}' not found`);
+          process.exit(1);
+        }
+        startServer(workflowDir);
+        // Do not exit, server needs to stay alive
       }
       break;
 

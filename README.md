@@ -47,6 +47,7 @@ state-machine run <workflow-name>
 state-machine resume <workflow-name>
 state-machine status <workflow-name>
 state-machine history <workflow-name> [limit]
+state-machine trace-logs <workflow-name>
 state-machine reset <workflow-name>
 ```
 
@@ -58,7 +59,7 @@ workflows/<name>/
 ├── package.json       # Sets "type": "module" for this workflow folder
 ├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
 ├── interactions/      # Human-in-the-loop files (auto-created)
-├── state/             # current.json, history.jsonl, generated-prompt.md
+├── state/             # current.json, history.jsonl
 └── steering/          # global.md + config.json
 ```
 
@@ -292,10 +293,10 @@ export const config = {
 };
 ```
 
-The runtime writes the fully-built prompt to:
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable via:
 
-```text
-workflows/<name>/state/generated-prompt.md
+```bash
+state-machine trace-logs <workflow-name>
 ```
 
 ---
