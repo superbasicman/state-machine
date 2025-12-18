@@ -8,7 +8,7 @@
     ".": "./lib/index.js"
   },
   "bin": {
-    "state-machine": "./bin/cli.js"
+    "state-machine": "bin/cli.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -27,7 +27,6 @@
   },
   "files": [
     "bin",
-    "lib",
-    "templates"
+    "lib"
   ]
 }
