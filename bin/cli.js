@@ -20,6 +20,7 @@ Usage:
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history
   state-machine reset <workflow-name>      Reset workflow state
+  state-machine reset-hard <workflow-name> Hard reset (clear history/interactions)
   state-machine list                       List all workflows
   state-machine help                       Show this help
 
@@ -212,6 +213,19 @@ async function main() {
         const workflowDir = resolveWorkflowDir(workflowName);
         const runtime = new WorkflowRuntime(workflowDir);
         runtime.reset();
+      }
+      break;
+
+    case 'reset-hard':
+      if (!workflowName) {
+        console.error('Error: Workflow name required');
+        console.error('Usage: state-machine reset-hard <workflow-name>');
+        process.exit(1);
+      }
+      {
+        const workflowDir = resolveWorkflowDir(workflowName);
+        const runtime = new WorkflowRuntime(workflowDir);
+        runtime.resetHard();
       }
       break;
 

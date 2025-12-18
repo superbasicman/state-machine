@@ -8,13 +8,11 @@ Instructions for Claude Code (claude.ai/code) when editing this repository.
 Agent State Machine is a **native JavaScript workflow runner**.
 
 You write a workflow as normal `async/await` JavaScript, and the runtime provides:
-- `agent(name, params?)` with **automatic caching** (safe to re-run / resume)
+- `agent(name, params?)` for running specialized task handlers
 - `memory` that **persists to disk** on mutation
-- Human-in-the-loop pausing through `initialPrompt()` and agent-driven interactions
+- Human-in-the-loop blocking through `initialPrompt()` and agent-driven interactions
 - Agents implemented as **JS modules** or **Markdown prompt templates**
 - LLM calls via local CLI tools or provider APIs
-
-There is **no legacy DSL workflow engine** (no step arrays, goto/forEach constructs, etc.). Control flow is standard JavaScript (`if`, `for`, functions, etc.).
 
 ---
 
@@ -24,10 +22,10 @@ There is **no legacy DSL workflow engine** (no step arrays, goto/forEach constru
 # Scaffold a new workflow folder
 state-machine --setup <workflow-name>
 
-# Run a workflow from the top (idempotent due to caching)
+# Run a workflow
 state-machine run <workflow-name>
 
-# Resume by re-running (cached calls are skipped)
+# Resume an interrupted workflow (re-runs from the top)
 state-machine resume <workflow-name>
 
 # Inspect / debug
@@ -112,11 +110,10 @@ export default async function () {
 
 ### Resume model
 
-“Resume” re-runs the workflow from the beginning. Previously completed work is skipped because:
-- `agent()` results are cached by `(agent name + params)`
-- `initialPrompt()` is cached once answered
-
-This keeps workflows simple: write them once, rerun as many times as needed.
+Workflows run as standard Node.js processes.
+- For persistence, use the `memory` object explicitly.
+- If a workflow is interrupted, `state-machine resume` re-runs the workflow from the top.
+- Since interactions now **block inline**, you generally stay in the same process until completion.
 
 ---
 
@@ -178,10 +175,10 @@ Supported frontmatter knobs (non-exhaustive, based on current implementation):
 
 ## Human-in-the-loop interactions
 
-Two ways a run can pause:
+Two ways a workflow can wait for input:
 
 1) `initialPrompt(...)`
-- In a non-interactive environment it creates an `interactions/<slug>.md` file and pauses.
+- Prompts directly in the terminal (TTY) or creates an `interactions/<slug>.md` file and waits for confirmation (non-TTY).
 
 2) A JS agent returns an interaction request:
 
@@ -195,7 +192,10 @@ return {
 };
 ```
 
-When paused, the runtime records `_pendingInteraction` in `state/current.json`. Fill in the interaction file, then run `state-machine resume <workflow>`.
+When an interaction is requested, the runtime:
+1. Creates/updates the interaction file.
+2. Blocks execution and prompts the user in the terminal to press `y` after editing.
+3. Reads the response and continues execution immediately—**no re-running required**.
 
 ---
 
@@ -205,9 +205,7 @@ Per workflow, persisted files live under `workflows/<name>/state/`:
 
 - `current.json`
   - `memory`: persisted workflow memory
-  - `_cache`: cached results for `agent()` and other cached helpers
-  - `status`: `IDLE | RUNNING | PAUSED | FAILED | COMPLETED`
-  - `_pendingInteraction`: set when waiting for a human response
+  - `status`: `IDLE | RUNNING | FAILED | COMPLETED`
 - `history.jsonl`
   - event log, newest entries prepended
 - `generated-prompt.md`

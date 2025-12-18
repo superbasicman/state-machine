@@ -1,11 +1,10 @@
 # agent-state-machine
 
-A workflow runner for building **resumable, idempotent agent workflows** in plain JavaScript.
+A workflow runner for building **linear, stateful agent workflows** in plain JavaScript.
 
 You write normal `async/await` code. The runtime handles:
-- **Cached** `agent()` calls (safe to re-run / resume)
 - **Auto-persisted** `memory` (saved to disk on mutation)
-- **Human-in-the-loop** pauses via `initialPrompt()` or agent-driven interactions
+- **Human-in-the-loop** blocking via `initialPrompt()` or agent-driven interactions
 - Local **JS agents** + **Markdown agents** (LLM-powered)
 
 ---
@@ -93,13 +92,11 @@ export default async function() {
 
 ### How “resume” works
 
-`resume` simply **re-runs your workflow**. Because `agent()` and `initialPrompt()` are cached, already-completed work is skipped automatically.
+`resume` restarts your workflow from the top. 
 
-If the workflow paused for input, you’ll be told which `interactions/<slug>.md` file to edit; after you fill it in, run:
+If the workflow needs human input, it will **block inline** in the terminal. You’ll be told which `interactions/<slug>.md` file to edit; after you fill it in, press `y` in the same terminal session to continue.
 
-```bash
-state-machine resume <workflow-name>
-```
+If the process is interrupted, running `state-machine resume <workflow-name>` will restart the execution. Use the `memory` object to store and skip work manually if needed.
 
 ---
 
@@ -108,9 +105,6 @@ state-machine resume <workflow-name>
 ### `agent(name, params?)`
 
 Runs `workflows/<name>/agents/<agent>.(js|mjs|cjs)` or `<agent>.md`.
-
-- Results are cached automatically (by agent name + params).
-- If it’s cached, the result is returned immediately on re-run.
 
 ```js
 const out = await agent('review', { file: 'src/app.js' });
@@ -130,10 +124,10 @@ memory.count = (memory.count || 0) + 1;
 
 ### `initialPrompt(question, options?)`
 
-Gets user input with caching.
+Gets user input.
 
 - In a TTY, it prompts in the terminal.
-- Otherwise it creates `interactions/<slug>.md` and pauses the workflow.
+- Otherwise it creates `interactions/<slug>.md` and blocks until you confirm in the terminal.
 
 ```js
 const repo = await initialPrompt('What repo should I work on?', { slug: 'repo' });
@@ -194,17 +188,19 @@ module.exports = handler;
 module.exports.handler = handler;
 ```
 
-If you need to pause for human input from a JS agent, return an `_interaction` payload:
+If you need to request human input from a JS agent, return an `_interaction` payload:
 
 ```js
 return {
   _interaction: {
     slug: 'approval',
-    targetKey: '_interaction_approval',
+    targetKey: 'approval',
     content: 'Please approve this change (yes/no).'
   }
 };
 ```
+
+The runtime will block execution and wait for your response in the terminal.
 
 ### Markdown agents (`.md`)
 

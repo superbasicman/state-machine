@@ -5,9 +5,14 @@ import { notify } from './scripts/hello.js';
 export const config = {
   models: {
     codex: "codex --model gpt-5.1-codex-mini",
-    fast: "claude -p",
+    fast: "gemini",
     smart: "claude -m claude-sonnet-4-20250514 -p",
     genius: "claude -m claude-opus-4-20250514 -p",
+  },
+  apiKeys: {
+    gemini: process.env.GEMINI_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    openai: process.env.OPENAI_API_KEY,
   }
 };
 
