@@ -120,10 +120,15 @@ export default async function() {
   // await agent('yoda-greeter', userInfo);
 
   // Example: Parallel execution
-  // const [a, b] = await parallel([
-  //   agent('example', { which: 'a' }),
-  //   agent('example', { which: 'b' })
+  // const [a, b, c] = await parallel([
+  //   agent('yoda-greeter', { name: 'the names augustus but friends call me gus' }),
+  //   agent('yoda-greeter', { name: 'uriah' }),
+  //   agent('yoda-greeter', { name: 'lucas' })
   // ]);
+
+  // console.log('a: ' + JSON.stringify(a))
+  // console.log('b: ' + JSON.stringify(b))
+  // console.log('c: ' + JSON.stringify(c))
 
   notify(['project-builder', userInfo.name || userInfo + ' has been greeted!']);
 
