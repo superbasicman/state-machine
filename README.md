@@ -11,14 +11,28 @@ You write normal `async/await` code. The runtime handles:
 
 ## Install
 
+You need to install the package **globally** to get the CLI, and **locally** in your project so your workflow can import the library.
+
+### Global CLI
+Provides the `state-machine` command.
+
 ```bash
-npm i agent-state-machine
+# npm
+npm i -g agent-state-machine
+
+# pnpm
+pnpm add -g agent-state-machine
 ```
 
-Global CLI:
+### Local Library
+Required so your `workflow.js` can `import { agent, memory } from 'agent-state-machine'`.
 
 ```bash
-npm i -g agent-state-machine
+# npm
+npm i agent-state-machine
+
+# pnpm (for monorepos/turbo, install in root)
+pnpm add agent-state-machine -w
 ```
 
 Requirements: Node.js >= 16.

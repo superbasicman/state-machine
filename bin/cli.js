@@ -2,16 +2,29 @@
 
 import path from 'path';
 import fs from 'fs';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const args = process.argv.slice(2);
 const command = args[0];
 
+function getVersion() {
+  try {
+    const pkgPath = path.join(__dirname, '../package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+    return pkg.version;
+  } catch {
+    return 'unknown';
+  }
+}
+
 function printHelp() {
   console.log(`
-Agent State Machine CLI (Native JS Workflows Only)
+Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
@@ -27,6 +40,7 @@ Usage:
 Options:
   --setup, -s     Initialize a new workflow with directory structure
   --help, -h      Show help
+  --version, -v   Show version
 
 Workflow Structure:
   workflows/<name>/
@@ -143,6 +157,11 @@ async function runOrResume(workflowName) {
 }
 
 async function main() {
+  if (command === '--version' || command === '-v') {
+    console.log(getVersion());
+    process.exit(0);
+  }
+
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     printHelp();
     process.exit(0);
