@@ -29,6 +29,8 @@
     "bin",
     "lib",
     "vercel-server/local-server.js",
-    "vercel-server/public"
+    "vercel-server/public",
+    "vercel-server/ui",
+    "vercel-server/api"
   ]
 }

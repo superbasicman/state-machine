@@ -342,7 +342,7 @@ async function handleSubmitPost(req, res, token) {
 /**
  * Serve session UI
  */
-const MASTER_TEMPLATE_PATH = path.join(__dirname, '..', 'lib', 'ui', 'index.html');
+const MASTER_TEMPLATE_PATH = path.join(__dirname, 'ui', 'index.html');
 
 /**
  * Get session HTML by reading the master template from lib/ui/index.html

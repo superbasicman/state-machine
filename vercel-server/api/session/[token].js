@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 let cachedTemplate = null;
 async function getTemplate() {
   if (cachedTemplate) return cachedTemplate;
-  // Point to the unified template in /lib/ui/index.html
-  const templatePath = path.join(__dirname, '..', '..', '..', 'lib', 'ui', 'index.html');
+  // Point to the unified template in vercel-server/ui/index.html
+  const templatePath = path.join(__dirname, '..', '..', 'ui', 'index.html');
   cachedTemplate = await readFile(templatePath, 'utf8');
   return cachedTemplate;
 }
