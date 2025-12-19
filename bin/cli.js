@@ -34,8 +34,9 @@ Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
   state-machine run <workflow-name>        Run a workflow (remote follow enabled by default)
-  state-machine run <workflow-name> --local  Run with local server (localhost:3000)
-  state-machine follow <workflow-name>    View prompt trace history in browser with live updates
+  state-machine run <workflow-name> -l  Run with local server (localhost:3000)
+  state-machine follow <workflow-name> --local View prompt trace history on localhost:3000
+  state-machine follow <workflow-name>       View remote follow link if available
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
   state-machine reset <workflow-name>      Reset workflow state (clears memory/state)
@@ -272,7 +273,7 @@ async function main() {
     case 'follow':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error('Usage: state-machine follow <workflow-name>');
+        console.error('Usage: state-machine follow <workflow-name> [--local]');
         process.exit(1);
       }
       {
@@ -281,8 +282,17 @@ async function main() {
           console.error(`Error: Workflow '${workflowName}' not found`);
           process.exit(1);
         }
-        startServer(workflowDir);
-        // Do not exit, server needs to stay alive
+
+        const useLocal = args.includes('--local') || args.includes('-l');
+        if (useLocal) {
+          startServer(workflowDir);
+        } else {
+          console.log('\n> Follow UI for remote sessions usually provides a unique URL.');
+          console.log(`> Visit ${DEFAULT_REMOTE_URL} to see your workflows.`);
+          console.log('> Or use `state-machine follow ' + workflowName + ' --local` to view local history.\n');
+          process.exit(0);
+        }
+        // Do not exit if local server started, server needs to stay alive
       }
       break;
 

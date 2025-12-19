@@ -11,7 +11,8 @@ const __dirname = path.dirname(__filename);
 let cachedTemplate = null;
 async function getTemplate() {
   if (cachedTemplate) return cachedTemplate;
-  const templatePath = path.join(__dirname, 'session.html'); // adjust if you put it elsewhere
+  // Point to the unified template in /lib/ui/index.html
+  const templatePath = path.join(__dirname, '..', '..', '..', 'lib', 'ui', 'index.html');
   cachedTemplate = await readFile(templatePath, 'utf8');
   return cachedTemplate;
 }
