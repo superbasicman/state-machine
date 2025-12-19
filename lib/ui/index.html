@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,14 +15,32 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        .markdown-body { white-space: pre-wrap; font-family: monospace; }
+        .markdown-body {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
         /* Scrollbar styles for dark mode */
-        .dark ::-webkit-scrollbar { width: 10px; height: 10px; }
-        .dark ::-webkit-scrollbar-track { background: #000000; }
-        .dark ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 5px; }
-        .dark ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        .dark ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        .dark ::-webkit-scrollbar-track {
+            background: #000000;
+        }
+
+        .dark ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 5px;
+        }
+
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #3f3f46;
+        }
     </style>
 </head>
+
 <body>
     <div id="root"></div>
 
@@ -64,14 +83,113 @@
             };
 
             return (
-                <button 
-                    onClick={handleCopy} 
+                <button
+                    onClick={handleCopy}
                     className={`flex items-center space-x-1 text-[9px] uppercase tracking-wider transition-colors hover:text-blue-500 focus:outline-none ${className}`}
                     title="Copy to clipboard"
                 >
                     {copied ? <CheckIcon /> : <CopyIcon />}
                     <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
+            );
+        }
+
+        function JsonView({ data, label, onTop = false, timestamp }) {
+            const [viewMode, setViewMode] = useState('clean'); // 'clean' | 'raw'
+
+            const isObject = typeof data === 'object' && data !== null;
+            const rawContent = isObject ? JSON.stringify(data, null, 2) : String(data);
+            const lineBreak = '';
+
+            // UPDATED: "clean" view loops through ALL top-level keys.
+            // Headers render in CAPS, BOLD, and BLUE.
+            let cleanParts = null;
+            if (isObject) {
+                const keys = Object.keys(data);
+                if (keys.length > 0) {
+                    cleanParts = keys.map((k) => {
+                        const val = data[k];
+                        const renderedVal = typeof val === 'string' ? val : JSON.stringify(val, null, 2);
+                        const prettyVal = String(renderedVal).replace(/\\n/g, lineBreak);
+
+                        return (
+                            <div key={k} className="mb-5 last:mb-0">
+                                <div className="text-[11px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 mb-2">
+                                    {k}
+                                </div>
+                                <div className="whitespace-pre-wrap">
+                                    {prettyVal}
+                                </div>
+                            </div>
+                        );
+                    });
+                }
+            }
+
+            // For RAW view we still render as a string
+            const rawContentUnescaped = rawContent; // keep raw exact
+
+            const hasToggle = isObject || rawContent.includes('\\n');
+
+            if (onTop) {
+                return (
+                    <div className="flex justify-end w-full group">
+                        <div className="max-w-[85%] bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl rounded-tr-none shadow-sm p-6 transition-all hover:border-blue-200 dark:hover:border-blue-800 relative">
+                            <div className="flex justify-between items-center mb-3">
+                                <div className="text-[9px] font-black text-blue-300 dark:text-blue-800/60 uppercase tracking-[0.2em] text-right w-full">
+                                    {label}
+                                </div>
+                                <div className="absolute top-4 left-4 opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-2">
+                                    {hasToggle && (
+                                        <button
+                                            onClick={() => setViewMode(v => v === 'clean' ? 'raw' : 'clean')}
+                                            className="text-[9px] uppercase tracking-wider font-bold text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400 focus:outline-none"
+                                        >
+                                            {viewMode === 'clean' ? 'Raw' : 'Clean'}
+                                        </button>
+                                    )}
+                                    <CopyButton text={data} className="text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400" />
+                                </div>
+                            </div>
+
+                            <div className="markdown-body text-gray-800 dark:text-zinc-200 text-sm overflow-x-auto leading-relaxed">
+                                {viewMode === 'clean'
+                                    ? (cleanParts ?? String(rawContent).replace(/\\n/g, lineBreak))
+                                    : rawContentUnescaped
+                                }
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="bg-gray-100 dark:bg-zinc-900/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-3 text-xs w-full max-w-2xl font-mono overflow-x-auto relative group">
+                    <div className="text-[9px] text-gray-400 dark:text-zinc-600 uppercase tracking-widest mb-1 flex justify-between items-center">
+                        <div className="flex space-x-4">
+                            <span>{label}</span>
+                            {timestamp && <span>{timestamp}</span>}
+                        </div>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-2">
+                            {hasToggle && (
+                                <button
+                                    onClick={() => setViewMode(v => v === 'clean' ? 'raw' : 'clean')}
+                                    className="text-[9px] uppercase tracking-wider font-bold text-zinc-400 hover:text-blue-500 focus:outline-none"
+                                >
+                                    {viewMode === 'clean' ? 'Raw' : 'Clean'}
+                                </button>
+                            )}
+                            <CopyButton text={data} className="text-gray-400 hover:text-gray-600" />
+                        </div>
+                    </div>
+
+                    <div className="text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
+                        {viewMode === 'clean'
+                            ? (cleanParts ?? String(rawContent).replace(/\\n/g, lineBreak))
+                            : rawContentUnescaped
+                        }
+                    </div>
+                </div>
             );
         }
 
@@ -129,7 +247,7 @@
                     </div>
                 </div>
             );
-            
+
             if (error) return (
                 <div className={theme}>
                     <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-black text-red-500">
@@ -154,26 +272,26 @@
                 <div className={theme}>
                     <div className="min-h-screen bg-gray-50 dark:bg-black transition-colors duration-200">
                         <div className="max-w-5xl mx-auto min-h-screen flex flex-col">
-                            
+
                             {/* Sticky Header */}
                             <header className="sticky top-0 z-50 py-4 px-6 bg-gray-50/90 dark:bg-black/90 backdrop-blur-md border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between mb-8 transition-colors">
                                 <div className="flex-1">
                                     <h1 className="text-xl font-bold text-gray-800 dark:text-zinc-100 transition-colors uppercase tracking-tight">{workflowName}</h1>
-                                    <p className="text-gray-500 dark:text-zinc-500 text-xs mt-0.5">Runtime History & Prompt Logs</p>
+                                    <p className="text-gray-500 dark:text-zinc-500 text-xs mt-0.5">Runtimes History & Prompt Logs</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                    <button 
+                                    <button
                                         onClick={toggleSort}
                                         className="p-2 rounded-full bg-gray-200 dark:bg-zinc-900 text-gray-800 dark:text-zinc-200 hover:bg-gray-300 dark:hover:bg-zinc-800 transition-colors"
                                         title={sortOrder === 'newest' ? "Sort: Newest First" : "Sort: Oldest First"}
                                     >
-                                        {sortOrder === 'newest' ? 
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg> 
-                                            : 
+                                        {sortOrder === 'newest' ?
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" /></svg>
+                                            :
                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" transform="scale(1, -1) translate(0, -24)" /></svg>
                                         }
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={toggleTheme}
                                         className="p-2 rounded-full bg-gray-200 dark:bg-zinc-900 text-gray-800 dark:text-zinc-200 hover:bg-gray-300 dark:hover:bg-zinc-800 transition-colors"
                                         title="Toggle Theme"
@@ -285,19 +403,11 @@
 
                                                 {/* Output (Response) - NOW ON TOP */}
                                                 {(item.output || item.result) && (
-                                                    <div className="flex justify-end w-full group">
-                                                        <div className="max-w-[85%] bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl rounded-tr-none shadow-sm p-6 transition-all hover:border-blue-200 dark:hover:border-blue-800 relative">
-                                                            <div className="flex justify-between items-center mb-3">
-                                                                <div className="text-[9px] font-black text-blue-300 dark:text-blue-800/60 uppercase tracking-[0.2em] text-right w-full">Output / Response</div>
-                                                                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                    <CopyButton text={item.output || item.result} className="text-blue-400 hover:text-blue-600 dark:text-blue-600 dark:hover:text-blue-400" />
-                                                                </div>
-                                                            </div>
-                                                            <div className="markdown-body text-gray-800 dark:text-zinc-200 text-sm overflow-x-auto leading-relaxed">
-                                                                {typeof item.output === 'object' ? JSON.stringify(item.output, null, 2) : (item.output || item.result)}
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <JsonView
+                                                        data={item.output || item.result}
+                                                        label="Output / Response"
+                                                        onTop={true}
+                                                    />
                                                 )}
 
                                                 {/* Prompt (Input) - NOW ON BOTTOM */}
@@ -321,23 +431,16 @@
                                     }
 
                                     // 7. CATCH-ALL for Unknown Events
-                                    // If we made it here, it's an event we didn't explicitly handle.
-                                    // Render it generically.
                                     return (
                                         <div key={idx} className="flex justify-center px-4">
-                                            <div className="bg-gray-100 dark:bg-zinc-900/50 border border-gray-200 dark:border-zinc-800 rounded-lg px-4 py-3 text-xs w-full max-w-2xl font-mono overflow-x-auto">
-                                                <div className="text-[9px] text-gray-400 dark:text-zinc-600 uppercase tracking-widest mb-1 flex justify-between">
-                                                    <span>{item.event}</span>
-                                                    <span>{formatTime(item.timestamp)}</span>
-                                                </div>
-                                                <div className="text-gray-600 dark:text-zinc-400 whitespace-pre-wrap">
-                                                    {JSON.stringify(item, (key, value) => {
-                                                        // Exclude redundant keys to keep it clean
-                                                        if (key === 'event' || key === 'timestamp') return undefined;
-                                                        return value;
-                                                    }, 2).replace(/^{|}$/g, '').trim()}
-                                                </div>
-                                            </div>
+                                            <JsonView
+                                                data={JSON.parse(JSON.stringify(item, (key, value) => {
+                                                    if (key === 'event' || key === 'timestamp') return undefined; // Keep it clean
+                                                    return value;
+                                                }))}
+                                                label={item.event}
+                                                timestamp={formatTime(item.timestamp)}
+                                            />
                                         </div>
                                     );
                                 })}
@@ -356,4 +459,5 @@
         root.render(<App />);
     </script>
 </body>
+
 </html>
