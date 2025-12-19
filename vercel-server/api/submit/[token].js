@@ -68,12 +68,13 @@ export default async function handler(req, res) {
     // Set TTL on pending list
     await redis.expire(pendingKey, 300); // 5 minutes
 
-    // Log event to history
+    // Log event to history (include answer preview)
     const event = {
       timestamp: new Date().toISOString(),
       event: 'INTERACTION_SUBMITTED',
       slug,
       targetKey: targetKey || `_interaction_${slug}`,
+      answer: response.substring(0, 200) + (response.length > 200 ? '...' : ''),
       source: 'remote',
     };
 

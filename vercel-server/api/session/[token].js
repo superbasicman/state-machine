@@ -235,32 +235,39 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const [sortNewest, setSortNewest] = useState(true);
       const eventSourceRef = useRef(null);
 
-      // Detect pending interaction from history
+      // Detect pending interactions - scan history for unresolved requests
       useEffect(() => {
-        if (history.length === 0) return;
-
-        // Check if latest event is an interaction/prompt request
-        const latest = history[0];
-        const isRequest = latest?.event === 'INTERACTION_REQUESTED' ||
-                         latest?.event === 'PROMPT_REQUESTED';
-
-        // Check if it's been resolved
-        const hasResolution = history.some(e =>
-          (e.event === 'INTERACTION_RESOLVED' ||
-           e.event === 'PROMPT_ANSWERED' ||
-           e.event === 'INTERACTION_SUBMITTED') &&
-          e.slug === latest?.slug
-        );
-
-        if (isRequest && !hasResolution) {
-          setPendingInteraction({
-            slug: latest.slug,
-            targetKey: latest.targetKey || \`_interaction_\${latest.slug}\`,
-            question: latest.question,
-          });
-        } else {
+        if (history.length === 0) {
           setPendingInteraction(null);
+          return;
         }
+
+        // Build set of resolved slugs (scan from newest to oldest)
+        const resolvedSlugs = new Set();
+        let pending = null;
+
+        for (const entry of history) {
+          const isResolution = entry.event === 'INTERACTION_RESOLVED' ||
+                               entry.event === 'PROMPT_ANSWERED' ||
+                               entry.event === 'INTERACTION_SUBMITTED';
+          const isRequest = entry.event === 'INTERACTION_REQUESTED' ||
+                            entry.event === 'PROMPT_REQUESTED';
+
+          if (isResolution && entry.slug) {
+            resolvedSlugs.add(entry.slug);
+          }
+
+          // Find the most recent unresolved request
+          if (isRequest && entry.slug && !resolvedSlugs.has(entry.slug) && !pending) {
+            pending = {
+              slug: entry.slug,
+              targetKey: entry.targetKey || \`_interaction_\${entry.slug}\`,
+              question: entry.question,
+            };
+          }
+        }
+
+        setPendingInteraction(pending);
       }, [history]);
 
       // Connect to SSE
@@ -308,7 +315,16 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
                 break;
 
               case 'event':
-                setHistory(prev => [data, ...prev]);
+                // Skip duplicate INTERACTION_SUBMITTED events (from optimistic updates)
+                setHistory(prev => {
+                  if (data.event === 'INTERACTION_SUBMITTED' && data.slug) {
+                    const hasDupe = prev.some(e =>
+                      e.event === 'INTERACTION_SUBMITTED' && e.slug === data.slug
+                    );
+                    if (hasDupe) return prev;
+                  }
+                  return [data, ...prev];
+                });
                 break;
 
               case 'cli_connected':
@@ -334,6 +350,17 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
       const handleSubmit = async (slug, targetKey, response) => {
         const token = window.SESSION_TOKEN;
 
+        // Optimistic update - add event immediately to hide form
+        const optimisticEvent = {
+          timestamp: new Date().toISOString(),
+          event: 'INTERACTION_SUBMITTED',
+          slug,
+          targetKey,
+          answer: response.substring(0, 200) + (response.length > 200 ? '...' : ''),
+          source: 'remote',
+        };
+        setHistory(prev => [optimisticEvent, ...prev]);
+
         const res = await fetch(\`/api/submit/\${token}\`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -341,6 +368,8 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         });
 
         if (!res.ok) {
+          // Rollback optimistic update on error
+          setHistory(prev => prev.filter(e => e !== optimisticEvent));
           const error = await res.json();
           throw new Error(error.error || 'Failed to submit');
         }
