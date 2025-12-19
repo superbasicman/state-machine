@@ -270,79 +270,120 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
         setPendingInteraction(pending);
       }, [history]);
 
-      // Connect to SSE
+      // Fetch history from API
+      const fetchHistory = async () => {
+        const token = window.SESSION_TOKEN;
+        try {
+          const res = await fetch(\`/api/history/\${token}\`);
+          const data = await res.json();
+          if (data.entries) {
+            setHistory(data.entries);
+          }
+          setStatus(data.cliConnected ? 'connected' : 'disconnected');
+          return true;
+        } catch (err) {
+          console.error('Failed to fetch history:', err);
+          return false;
+        }
+      };
+
+      // Connect to SSE with robust reconnection
       useEffect(() => {
         const token = window.SESSION_TOKEN;
         if (!token) return;
 
-        // Fetch initial history
-        fetch(\`/api/history/\${token}\`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.entries) {
-              setHistory(data.entries);
-            }
-            setStatus(data.cliConnected ? 'connected' : 'disconnected');
-          })
-          .catch(err => {
-            console.error('Failed to fetch history:', err);
-            setStatus('disconnected');
-          });
+        let eventSource = null;
+        let reconnectTimeout = null;
+        let pollInterval = null;
+        let reconnectAttempts = 0;
+        const maxReconnectDelay = 30000;
 
-        // Set up SSE
-        const eventSource = new EventSource(\`/api/events/\${token}\`);
-        eventSourceRef.current = eventSource;
-
-        eventSource.onopen = () => {
-          setStatus('connected');
-        };
-
-        eventSource.onerror = () => {
-          setStatus('disconnected');
-        };
-
-        eventSource.onmessage = (e) => {
-          try {
-            const data = JSON.parse(e.data);
-
-            switch (data.type) {
-              case 'status':
-                setStatus(data.cliConnected ? 'connected' : 'disconnected');
-                break;
-
-              case 'history':
-                setHistory(data.entries || []);
-                break;
-
-              case 'event':
-                // Skip duplicate INTERACTION_SUBMITTED events (from optimistic updates)
-                setHistory(prev => {
-                  if (data.event === 'INTERACTION_SUBMITTED' && data.slug) {
-                    const hasDupe = prev.some(e =>
-                      e.event === 'INTERACTION_SUBMITTED' && e.slug === data.slug
-                    );
-                    if (hasDupe) return prev;
-                  }
-                  return [data, ...prev];
-                });
-                break;
-
-              case 'cli_connected':
-              case 'cli_reconnected':
-                setStatus('connected');
-                break;
-
-              case 'cli_disconnected':
-                setStatus('disconnected');
-                break;
-            }
-          } catch (err) {
-            console.error('Failed to parse SSE message:', err);
+        const connect = () => {
+          // Clean up existing connection
+          if (eventSource) {
+            eventSource.close();
           }
+
+          eventSource = new EventSource(\`/api/events/\${token}\`);
+          eventSourceRef.current = eventSource;
+
+          eventSource.onopen = () => {
+            console.log('SSE connected');
+            setStatus('connected');
+            reconnectAttempts = 0;
+            // Fetch fresh history on reconnect
+            fetchHistory();
+          };
+
+          eventSource.onerror = (err) => {
+            console.error('SSE error, will reconnect...', err);
+            setStatus('disconnected');
+            eventSource.close();
+
+            // Exponential backoff for reconnection
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+            reconnectAttempts++;
+            console.log(\`Reconnecting in \${delay}ms (attempt \${reconnectAttempts})\`);
+
+            reconnectTimeout = setTimeout(() => {
+              connect();
+            }, delay);
+          };
+
+          eventSource.onmessage = (e) => {
+            try {
+              const data = JSON.parse(e.data);
+
+              switch (data.type) {
+                case 'status':
+                  setStatus(data.cliConnected ? 'connected' : 'disconnected');
+                  break;
+
+                case 'history':
+                  setHistory(data.entries || []);
+                  break;
+
+                case 'event':
+                  // Skip duplicate INTERACTION_SUBMITTED events (from optimistic updates)
+                  setHistory(prev => {
+                    if (data.event === 'INTERACTION_SUBMITTED' && data.slug) {
+                      const hasDupe = prev.some(e =>
+                        e.event === 'INTERACTION_SUBMITTED' && e.slug === data.slug
+                      );
+                      if (hasDupe) return prev;
+                    }
+                    return [data, ...prev];
+                  });
+                  break;
+
+                case 'cli_connected':
+                case 'cli_reconnected':
+                  setStatus('connected');
+                  break;
+
+                case 'cli_disconnected':
+                  setStatus('disconnected');
+                  break;
+              }
+            } catch (err) {
+              console.error('Failed to parse SSE message:', err);
+            }
+          };
         };
+
+        // Initial fetch and connect
+        fetchHistory().then(() => connect());
+
+        // Fallback polling - fetch history every 10 seconds as backup
+        // This ensures we don't miss events even if SSE has issues
+        pollInterval = setInterval(() => {
+          fetchHistory();
+        }, 10000);
 
         return () => {
-          eventSource.close();
+          if (eventSource) eventSource.close();
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          if (pollInterval) clearInterval(pollInterval);
         };
       }, []);
 
@@ -373,6 +414,11 @@ const HTML_TEMPLATE = `<!DOCTYPE html>
           const error = await res.json();
           throw new Error(error.error || 'Failed to submit');
         }
+
+        // Fetch fresh history after submission to catch any new events
+        // (e.g., the next interaction request from the workflow)
+        setTimeout(() => fetchHistory(), 1000);
+        setTimeout(() => fetchHistory(), 3000);
       };
 
       const sortedHistory = sortNewest ? history : [...history].reverse();

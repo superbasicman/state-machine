@@ -583,44 +583,81 @@ function getSessionHTML(token, workflowName) {
         setPendingInteraction(pending);
       }, [history]);
 
+      // Fetch history from API
+      const fetchHistory = async () => {
+        const token = window.SESSION_TOKEN;
+        try {
+          const res = await fetch(\`/api/history/\${token}\`);
+          const data = await res.json();
+          if (data.entries) setHistory(data.entries);
+          setStatus(data.cliConnected ? 'connected' : 'disconnected');
+          return true;
+        } catch (err) {
+          console.error('Failed to fetch history:', err);
+          return false;
+        }
+      };
+
       useEffect(() => {
         const token = window.SESSION_TOKEN;
-        fetch(\`/api/history/\${token}\`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.entries) setHistory(data.entries);
-            setStatus(data.cliConnected ? 'connected' : 'disconnected');
-          })
-          .catch(() => setStatus('disconnected'));
+        let eventSource = null;
+        let reconnectTimeout = null;
+        let pollInterval = null;
+        let reconnectAttempts = 0;
 
-        const eventSource = new EventSource(\`/api/events/\${token}\`);
-        eventSource.onopen = () => setStatus('connected');
-        eventSource.onerror = () => setStatus('disconnected');
-        eventSource.onmessage = (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            switch (data.type) {
-              case 'status': setStatus(data.cliConnected ? 'connected' : 'disconnected'); break;
-              case 'history': setHistory(data.entries || []); break;
-              case 'event':
-                // Skip duplicate INTERACTION_SUBMITTED events (from optimistic updates)
-                setHistory(prev => {
-                  if (data.event === 'INTERACTION_SUBMITTED' && data.slug) {
-                    const hasDupe = prev.some(e =>
-                      e.event === 'INTERACTION_SUBMITTED' && e.slug === data.slug
-                    );
-                    if (hasDupe) return prev;
-                  }
-                  return [data, ...prev];
-                });
-                break;
-              case 'cli_connected':
-              case 'cli_reconnected': setStatus('connected'); break;
-              case 'cli_disconnected': setStatus('disconnected'); break;
-            }
-          } catch (err) { console.error(err); }
+        const connect = () => {
+          if (eventSource) eventSource.close();
+          eventSource = new EventSource(\`/api/events/\${token}\`);
+
+          eventSource.onopen = () => {
+            setStatus('connected');
+            reconnectAttempts = 0;
+            fetchHistory();
+          };
+
+          eventSource.onerror = () => {
+            setStatus('disconnected');
+            eventSource.close();
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+            reconnectAttempts++;
+            reconnectTimeout = setTimeout(connect, delay);
+          };
+
+          eventSource.onmessage = (e) => {
+            try {
+              const data = JSON.parse(e.data);
+              switch (data.type) {
+                case 'status': setStatus(data.cliConnected ? 'connected' : 'disconnected'); break;
+                case 'history': setHistory(data.entries || []); break;
+                case 'event':
+                  setHistory(prev => {
+                    if (data.event === 'INTERACTION_SUBMITTED' && data.slug) {
+                      const hasDupe = prev.some(e =>
+                        e.event === 'INTERACTION_SUBMITTED' && e.slug === data.slug
+                      );
+                      if (hasDupe) return prev;
+                    }
+                    return [data, ...prev];
+                  });
+                  break;
+                case 'cli_connected':
+                case 'cli_reconnected': setStatus('connected'); break;
+                case 'cli_disconnected': setStatus('disconnected'); break;
+              }
+            } catch (err) { console.error(err); }
+          };
         };
-        return () => eventSource.close();
+
+        fetchHistory().then(() => connect());
+
+        // Fallback polling every 10 seconds
+        pollInterval = setInterval(fetchHistory, 10000);
+
+        return () => {
+          if (eventSource) eventSource.close();
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          if (pollInterval) clearInterval(pollInterval);
+        };
       }, []);
 
       const handleSubmit = async (slug, targetKey, response) => {
@@ -646,6 +683,10 @@ function getSessionHTML(token, workflowName) {
           const error = await res.json();
           throw new Error(error.error || 'Failed to submit');
         }
+
+        // Fetch fresh history after submission to catch any new events
+        setTimeout(() => fetchHistory(), 1000);
+        setTimeout(() => fetchHistory(), 3000);
       };
 
       const sortedHistory = sortNewest ? history : [...history].reverse();
