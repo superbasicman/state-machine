@@ -674,11 +674,54 @@
 
                 // CENTERED inside card
                 if (item.event === "AGENT_STARTED") {
+                    if (item.prompt) {
+                        return wrapIO(
+                            "left",
+                            <section className="hairline rounded-2xl rounded-tl-none overflow-hidden io-in">
+                                <div className="rtl-safe px-5 py-4 divider flex items-center justify-between">
+                                    <div>
+                                        <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
+                                            AGENT STARTED
+                                        </div>
+                                        <div className="mt-1 text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
+                                            {(item.agent || "").toString()} • {time}
+                                        </div>
+                                    </div>
+                                    <CopyButton text={item.prompt} />
+                                </div>
+                                <div className="px-5 py-4">
+                                    <div className="markdown-body text-[13px] leading-relaxed overflow-x-auto">{item.prompt}</div>
+                                </div>
+                            </section>,
+                            idx
+                        );
+                    }
+
+                    return wrapIO(
+                        "left",
+                        <section className="hairline rounded-2xl rounded-tl-none px-6 py-5 io-in">
+                            <div className="rtl-safe flex items-center justify-between gap-4">
+                                <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
+                                    AGENT STARTED
+                                </div>
+                                <span className="text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
+                                    {time}
+                                </span>
+                            </div>
+                            <div className="mt-3 text-[13px] leading-relaxed">
+                                <span className="font-semibold">{item.agent}</span>
+                            </div>
+                        </section>,
+                        idx
+                    );
+                }
+
+                if (item.event === "AGENT_RESUMED") {
                     return wrapIO(
                         "center",
                         <section className="meta-center">
                             <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
-                                AGENT STARTED
+                                AGENT RESUMED
                             </div>
                             <div className="mt-2 text-[13px] leading-relaxed">
                                 <span className="font-semibold">{item.agent}</span>
@@ -714,8 +757,8 @@
 
                 if (item.event === "INTERACTION_REQUESTED" || item.event === "PROMPT_REQUESTED") {
                     return wrapIO(
-                        "left",
-                        <section className="hairline rounded-2xl px-6 py-5 io-in">
+                        "center",
+                        <section className="hairline rounded-2xl px-6 py-5">
                             <div className="rtl-safe flex items-center justify-between gap-4">
                                 <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
                                     INTERVENTION REQUIRED
@@ -735,8 +778,8 @@
                 if (item.event === "PROMPT_ANSWERED" || item.event === "INTERACTION_SUBMITTED") {
                     const isManual = item.source === "remote";
                     return wrapIO(
-                        "left",
-                        <section className="hairline rounded-2xl px-6 py-5 io-in">
+                        "center",
+                        <section className="hairline rounded-2xl px-6 py-5">
                             <div className="rtl-safe flex items-center justify-between gap-4">
                                 <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
                                     {isManual ? "RESOLVED VIA BROWSER" : "USER ANSWERED"}
@@ -752,31 +795,37 @@
                 }
 
                 if (item.event === "AGENT_COMPLETED" || item.event === "INTERACTION_RESOLVED") {
-                    return (
-                        <React.Fragment key={idx}>
-                            {wrapIO(
-                                "center",
-                                <section className="meta-center">
+                    if (item.event === "AGENT_COMPLETED") {
+                        return wrapIO(
+                            "right",
+                            <section className="io-out">
+                                <section className="meta-center mb-4">
                                     <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
                                         DONE
                                     </div>
                                     <div className="mt-1 text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
-                                        {(item.agent || item.slug || "").toString()} • {time}
+                                        {(item.agent || "").toString()} • {time}
                                     </div>
-                                </section>,
-                                `done-meta-${idx}`
-                            )}
-
-                            {(item.output || item.result) && wrapIO(
-                                "right",
-                                <section className="io-out">
+                                </section>
+                                {(item.output || item.result) && (
                                     <JsonView data={item.output || item.result} label="OUTPUT / RESPONSE" align="right" />
-                                </section>,
-                                `done-io-${idx}`
-                            )}
+                                )}
+                            </section>,
+                            idx
+                        );
+                    }
 
-                            {item.prompt ? renderPromptInputCard(item.prompt, `prompt-${idx}`) : null}
-                        </React.Fragment>
+                    return wrapIO(
+                        "center",
+                        <section className="meta-center">
+                            <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
+                                DONE
+                            </div>
+                            <div className="mt-1 text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
+                                {(item.slug || "").toString()} • {time}
+                            </div>
+                        </section>,
+                        idx
                     );
                 }
 
