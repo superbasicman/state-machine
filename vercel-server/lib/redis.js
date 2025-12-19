@@ -129,7 +129,12 @@ export async function getHistory(token) {
  */
 export async function publishEvent(token, event) {
   const channel = KEYS.events(token);
-  await redis.publish(channel, JSON.stringify(event));
+  const eventsListKey = `${channel}:list`;
+  const payload = JSON.stringify(event);
+
+  await redis.lpush(eventsListKey, payload);
+  await redis.expire(eventsListKey, SESSION_TTL);
+  await redis.publish(channel, payload);
 }
 
 /**
@@ -184,10 +189,12 @@ export async function subscribeEvents(token, callback) {
 export async function refreshSession(token) {
   const metaKey = KEYS.meta(token);
   const historyKey = KEYS.history(token);
+  const eventsListKey = `${KEYS.events(token)}:list`;
 
   await Promise.all([
     redis.expire(metaKey, SESSION_TTL),
     redis.expire(historyKey, SESSION_TTL),
+    redis.expire(eventsListKey, SESSION_TTL),
   ]);
 }
 
@@ -195,7 +202,11 @@ export async function refreshSession(token) {
  * Delete a session (cleanup)
  */
 export async function deleteSession(token) {
-  const keys = [KEYS.meta(token), KEYS.history(token)];
+  const keys = [
+    KEYS.meta(token),
+    KEYS.history(token),
+    `${KEYS.events(token)}:list`,
+  ];
   await redis.del(...keys);
 }
 

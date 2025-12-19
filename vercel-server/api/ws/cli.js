@@ -59,6 +59,9 @@ async function handlePost(req, res) {
         // Create session
         await createSession(sessionToken, { workflowName, cliConnected: true });
 
+        // Replace any existing history and event stream with the provided snapshot
+        await redis.del(KEYS.history(sessionToken), `${KEYS.events(sessionToken)}:list`);
+
         // Store initial history
         if (history && history.length > 0) {
           await addHistoryEvents(sessionToken, history);
