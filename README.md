@@ -45,7 +45,7 @@ Requirements: Node.js >= 16.
 state-machine --setup <workflow-name>
 state-machine run <workflow-name>
 
-state-machine follow <workflow-name> (view prompt trace history in browser with live updates)
+
 state-machine history <workflow-name> [limit]
 state-machine reset <workflow-name> (clears memory/state)
 state-machine reset-hard <workflow-name> (clears everything: history/interactions/memory)
@@ -298,11 +298,7 @@ export const config = {
 };
 ```
 
-The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates via:
-
-```bash
-state-machine follow <workflow-name>
-```
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL.
 
 ---
 

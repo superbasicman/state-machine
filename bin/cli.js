@@ -5,7 +5,7 @@ import fs from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
-import { startServer } from '../lib/ui/server.js';
+
 import { startLocalServer } from '../vercel-server/local-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -35,8 +35,7 @@ Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
   state-machine run <workflow-name>        Run a workflow (remote follow enabled by default)
   state-machine run <workflow-name> -l  Run with local server (localhost:3000)
-  state-machine follow <workflow-name> --local View prompt trace history on localhost:3000
-  state-machine follow <workflow-name>       View remote follow link if available
+
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
   state-machine reset <workflow-name>      Reset workflow state (clears memory/state)
@@ -270,31 +269,7 @@ async function main() {
       }
       break;
 
-    case 'follow':
-      if (!workflowName) {
-        console.error('Error: Workflow name required');
-        console.error('Usage: state-machine follow <workflow-name> [--local]');
-        process.exit(1);
-      }
-      {
-        const workflowDir = resolveWorkflowDir(workflowName);
-        if (!fs.existsSync(workflowDir)) {
-          console.error(`Error: Workflow '${workflowName}' not found`);
-          process.exit(1);
-        }
 
-        const useLocal = args.includes('--local') || args.includes('-l');
-        if (useLocal) {
-          startServer(workflowDir);
-        } else {
-          console.log('\n> Follow UI for remote sessions usually provides a unique URL.');
-          console.log(`> Visit ${DEFAULT_REMOTE_URL} to see your workflows.`);
-          console.log('> Or use `state-machine follow ' + workflowName + ' --local` to view local history.\n');
-          process.exit(0);
-        }
-        // Do not exit if local server started, server needs to stay alive
-      }
-      break;
 
     case 'reset':
       if (!workflowName) {
