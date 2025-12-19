@@ -78,40 +78,45 @@ export async function setCLIConnected(token, connected) {
 }
 
 /**
- * Add a history event
+ * Get the events list key (single source of truth)
  */
-export async function addHistoryEvent(token, event) {
-  const key = KEYS.history(token);
+function getEventsListKey(token) {
+  return `${KEYS.events(token)}:list`;
+}
+
+/**
+ * Add a single event to the events list (prepend, newest first)
+ */
+export async function addEvent(token, event) {
+  const key = getEventsListKey(token);
   const eventStr = JSON.stringify(event);
 
-  // Push to the beginning of the list (newest first)
   await redis.lpush(key, eventStr);
-
-  // Set TTL on the list
   await redis.expire(key, SESSION_TTL);
 }
 
 /**
- * Add multiple history events (for initial sync)
+ * Replace all events with a new set (for session init)
  */
-export async function addHistoryEvents(token, events) {
-  if (!events || events.length === 0) return;
+export async function setEvents(token, events) {
+  const key = getEventsListKey(token);
 
-  const key = KEYS.history(token);
-  const eventStrings = events.map((e) => JSON.stringify(e));
+  // Clear existing events
+  await redis.del(key);
 
-  // Push all events (they're already in newest-first order from CLI)
-  await redis.lpush(key, ...eventStrings);
-
-  // Set TTL on the list
-  await redis.expire(key, SESSION_TTL);
+  // Add all events if any (they're already in newest-first order from CLI)
+  if (events && events.length > 0) {
+    const eventStrings = events.map((e) => JSON.stringify(e));
+    await redis.lpush(key, ...eventStrings);
+    await redis.expire(key, SESSION_TTL);
+  }
 }
 
 /**
- * Get all history events
+ * Get all events from the events list
  */
-export async function getHistory(token) {
-  const key = KEYS.history(token);
+export async function getEvents(token) {
+  const key = getEventsListKey(token);
   const events = await redis.lrange(key, 0, -1);
 
   return events.map((e) => {
@@ -125,16 +130,41 @@ export async function getHistory(token) {
 }
 
 /**
- * Publish an event to the events channel (for browser SSE)
+ * Get events list length
  */
-export async function publishEvent(token, event) {
-  const channel = KEYS.events(token);
-  const eventsListKey = `${channel}:list`;
-  const payload = JSON.stringify(event);
+export async function getEventsLength(token) {
+  const key = getEventsListKey(token);
+  return redis.llen(key);
+}
 
-  await redis.lpush(eventsListKey, payload);
-  await redis.expire(eventsListKey, SESSION_TTL);
-  await redis.publish(channel, payload);
+/**
+ * Get events by range (for polling new events)
+ */
+export async function getEventsRange(token, start, end) {
+  const key = getEventsListKey(token);
+  const events = await redis.lrange(key, start, end);
+
+  return events.map((e) => {
+    if (typeof e === 'object') return e;
+    try {
+      return JSON.parse(e);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+}
+
+// Legacy aliases for backward compatibility
+export const addHistoryEvent = addEvent;
+export const addHistoryEvents = async (token, events) => setEvents(token, events);
+export const getHistory = getEvents;
+
+/**
+ * Publish event notification (for real-time updates via pub/sub)
+ */
+export async function publishEventNotification(token) {
+  const channel = KEYS.events(token);
+  await redis.publish(channel, 'update');
 }
 
 /**
@@ -188,12 +218,10 @@ export async function subscribeEvents(token, callback) {
  */
 export async function refreshSession(token) {
   const metaKey = KEYS.meta(token);
-  const historyKey = KEYS.history(token);
   const eventsListKey = `${KEYS.events(token)}:list`;
 
   await Promise.all([
     redis.expire(metaKey, SESSION_TTL),
-    redis.expire(historyKey, SESSION_TTL),
     redis.expire(eventsListKey, SESSION_TTL),
   ]);
 }
@@ -204,7 +232,6 @@ export async function refreshSession(token) {
 export async function deleteSession(token) {
   const keys = [
     KEYS.meta(token),
-    KEYS.history(token),
     `${KEYS.events(token)}:list`,
   ];
   await redis.del(...keys);

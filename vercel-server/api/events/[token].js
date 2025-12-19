@@ -2,14 +2,14 @@
  * File: /vercel-server/api/events/[token].js
  *
  * SSE endpoint for browser connections
- * Streams history and real-time events to connected browsers
+ * Streams events to connected browsers from a single source of truth (events list)
  */
 
 import {
   getSession,
-  getHistory,
-  redis,
-  KEYS,
+  getEvents,
+  getEventsLength,
+  getEventsRange,
   refreshSession,
 } from '../../lib/redis.js';
 
@@ -48,32 +48,15 @@ export default async function handler(req, res) {
       workflowName: session.workflowName,
     })}\n\n`);
 
-    // Send existing history
-    const history = await getHistory(token);
+    // Send all existing events (single source of truth)
+    const events = await getEvents(token);
     res.write(`data: ${JSON.stringify({
       type: 'history',
-      entries: history,
+      entries: events,
     })}\n\n`);
 
-    // Poll for new events
-    const eventsListKey = `${KEYS.events(token)}:list`;
-    let lastEventIndex = 0;
-
-    // If history is empty, seed from the event list to catch early events.
-    const currentLength = await redis.llen(eventsListKey);
-    // if (history.length === 0 && currentLength > 0) {
-    //   const existingEvents = await redis.lrange(eventsListKey, 0, -1);
-    //   const entries = existingEvents
-    //     .map((event) => (typeof event === 'object' ? event : JSON.parse(event)))
-    //     .filter(Boolean);
-    //   res.write(`data: ${JSON.stringify({
-    //     type: 'history',
-    //     entries,
-    //   })}\n\n`);
-    //   lastEventIndex = currentLength;
-    // } else {
-    //   lastEventIndex = currentLength;
-    // }
+    // Track current position for polling new events
+    let lastEventIndex = await getEventsLength(token);
 
     const pollInterval = setInterval(async () => {
       try {
@@ -81,15 +64,19 @@ export default async function handler(req, res) {
         await refreshSession(token);
 
         // Check for new events
-        const newLength = await redis.llen(eventsListKey);
+        const newLength = await getEventsLength(token);
 
         if (newLength > lastEventIndex) {
-          // Get new events (newest first)
-          const newEvents = await redis.lrange(eventsListKey, 0, newLength - lastEventIndex - 1);
+          // Get new events (they're prepended, so newest are at the start)
+          const newCount = newLength - lastEventIndex;
+          const newEvents = await getEventsRange(token, 0, newCount - 1);
 
-          for (const event of newEvents.reverse()) {
-            const eventData = typeof event === 'object' ? event : JSON.parse(event);
-            res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+          // Send in chronological order (oldest first of the new batch)
+          for (const eventData of newEvents.reverse()) {
+            res.write(`data: ${JSON.stringify({
+              type: 'event',
+              ...eventData,
+            })}\n\n`);
           }
 
           lastEventIndex = newLength;
@@ -106,14 +93,13 @@ export default async function handler(req, res) {
       } catch (err) {
         console.error('Error polling events:', err);
       }
-    }, 2000);
+    }, 1000); // Poll every 1 second for faster updates
 
     // Clean up on client disconnect
     req.on('close', () => {
       clearInterval(pollInterval);
     });
 
-    // For Vercel, we need to keep the connection alive but also respect function timeout
     // Send keepalive pings
     const keepaliveInterval = setInterval(() => {
       res.write(': keepalive\n\n');

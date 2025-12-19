@@ -12,9 +12,8 @@ import {
   getSession,
   updateSession,
   setCLIConnected,
-  addHistoryEvent,
-  addHistoryEvents,
-  publishEvent,
+  addEvent,
+  setEvents,
   redis,
   KEYS,
 } from '../../lib/redis.js';
@@ -59,19 +58,8 @@ async function handlePost(req, res) {
         // Create session
         await createSession(sessionToken, { workflowName, cliConnected: true });
 
-        // Replace any existing history and event stream with the provided snapshot
-        await redis.del(KEYS.history(sessionToken), `${KEYS.events(sessionToken)}:list`);
-
-        // Store initial history
-        if (history && history.length > 0) {
-          await addHistoryEvents(sessionToken, history);
-        }
-
-        // Notify browsers
-        await publishEvent(sessionToken, {
-          type: 'cli_connected',
-          workflowName,
-        });
+        // Replace events with the provided history snapshot (single source of truth)
+        await setEvents(sessionToken, history || []);
 
         return res.status(200).json({ success: true });
       }
@@ -82,9 +70,10 @@ async function handlePost(req, res) {
         // Update session as connected
         await setCLIConnected(sessionToken, true);
 
-        // Notify browsers
-        await publishEvent(sessionToken, {
-          type: 'cli_reconnected',
+        // Add reconnect event to events list
+        await addEvent(sessionToken, {
+          timestamp: new Date().toISOString(),
+          event: 'CLI_RECONNECTED',
           workflowName,
         });
 
@@ -104,14 +93,8 @@ async function handlePost(req, res) {
         delete historyEvent.sessionToken;
         delete historyEvent.type;
 
-        // Add to history
-        await addHistoryEvent(sessionToken, historyEvent);
-
-        // Notify browsers
-        await publishEvent(sessionToken, {
-          type: 'event',
-          ...historyEvent,
-        });
+        // Add to events list (single source of truth)
+        await addEvent(sessionToken, historyEvent);
 
         return res.status(200).json({ success: true });
       }
@@ -122,11 +105,21 @@ async function handlePost(req, res) {
         // Mark CLI as disconnected
         await setCLIConnected(sessionToken, false);
 
-        // Notify browsers
-        await publishEvent(sessionToken, {
-          type: 'cli_disconnected',
+        // Add disconnect event to events list
+        await addEvent(sessionToken, {
+          timestamp: new Date().toISOString(),
+          event: 'CLI_DISCONNECTED',
           reason,
         });
+
+        return res.status(200).json({ success: true });
+      }
+
+      case 'history_sync': {
+        const { history } = body;
+
+        // Replace events with synced history (for manual edits to history.jsonl)
+        await setEvents(sessionToken, history || []);
 
         return res.status(200).json({ success: true });
       }
