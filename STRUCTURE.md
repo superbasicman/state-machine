@@ -34,14 +34,14 @@ your-project/
     └── my-workflow/
         ├── workflow.js       # Native JS workflow (async/await)
         ├── package.json      # Sets "type": "module" for this workflow folder
+        ├── scripts/          # Your scripts
         ├── agents/           # Your agents
         │   ├── example.js    # JS agent template (ESM)
         │   └── greeter.md    # MD agent template
         ├── interactions/     # Human-in-the-loop inputs (created at runtime)
         ├── state/            # Auto-managed runtime state
         │   ├── current.json
-        │   ├── history.jsonl
-        │   └── prompts/   # Generated prompts history
+        │   └── history.jsonl
         ├── steering/
         │   ├── config.json
         │   └── global.md     # System prompt for all agents
