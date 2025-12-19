@@ -5,6 +5,7 @@ import fs from 'fs';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
+import { generateSessionToken } from '../lib/remote/client.js';
 
 import { startLocalServer } from '../vercel-server/local-server.js';
 
@@ -35,6 +36,9 @@ Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
   state-machine run <workflow-name>        Run a workflow (remote follow enabled by default)
   state-machine run <workflow-name> -l  Run with local server (localhost:3000)
+  state-machine run <workflow-name> -n  Generate a new remote follow path
+  state-machine run <workflow-name> -reset  Reset workflow state before running
+  state-machine run <workflow-name> -reset-hard  Hard reset workflow before running
 
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
@@ -46,6 +50,9 @@ Usage:
 Options:
   --setup, -s     Initialize a new workflow with directory structure
   --local, -l     Use local server instead of remote (starts on localhost:3000)
+  --new, -n       Generate a new remote follow path
+  -reset          Reset workflow state before running
+  -reset-hard     Hard reset workflow before running
   --help, -h      Show help
   --version, -v   Show version
 
@@ -78,6 +85,155 @@ function resolveWorkflowEntry(workflowDir) {
     if (fs.existsSync(p)) return p;
   }
   return null;
+}
+
+function findConfigObjectRange(source) {
+  const match = source.match(/export\s+const\s+config\s*=/);
+  if (!match) return null;
+  const startSearch = match.index + match[0].length;
+  const braceStart = source.indexOf('{', startSearch);
+  if (braceStart === -1) return null;
+
+  let depth = 0;
+  let inString = null;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escape = false;
+
+  for (let i = braceStart; i < source.length; i += 1) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escape = true;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === '\'' || ch === '`') {
+      inString = ch;
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return { start: braceStart, end: i };
+      }
+    }
+  }
+
+  return null;
+}
+
+function readRemotePathFromWorkflow(workflowFile) {
+  const source = fs.readFileSync(workflowFile, 'utf-8');
+  const range = findConfigObjectRange(source);
+  if (!range) return null;
+  const configSource = source.slice(range.start, range.end + 1);
+  const match = configSource.match(/\bremotePath\s*:\s*(['"`])([^'"`]+)\1/);
+  return match ? match[2] : null;
+}
+
+function writeRemotePathToWorkflow(workflowFile, remotePath) {
+  const source = fs.readFileSync(workflowFile, 'utf-8');
+  const range = findConfigObjectRange(source);
+  const remoteLine = `remotePath: "${remotePath}"`;
+
+  if (!range) {
+    const hasConfigExport = /export\s+const\s+config\s*=/.test(source);
+    if (hasConfigExport) {
+      throw new Error('Workflow config export is not an object literal; add remotePath manually.');
+    }
+    const trimmed = source.replace(/\s*$/, '');
+    const appended = `${trimmed}\n\nexport const config = {\n  ${remoteLine}\n};\n`;
+    fs.writeFileSync(workflowFile, appended);
+    return;
+  }
+
+  const configSource = source.slice(range.start, range.end + 1);
+  const remoteRegex = /\bremotePath\s*:\s*(['"`])([^'"`]*?)\1/;
+  let updatedConfigSource;
+
+  if (remoteRegex.test(configSource)) {
+    updatedConfigSource = configSource.replace(remoteRegex, remoteLine);
+  } else {
+    const inner = configSource.slice(1, -1);
+    const indentMatch = inner.match(/\n([ \t]+)\S/);
+    const indent = indentMatch ? indentMatch[1] : '  ';
+    const trimmedInner = inner.replace(/\s*$/, '');
+    const hasContent = trimmedInner.trim().length > 0;
+    let updatedInner = trimmedInner;
+
+    if (hasContent) {
+      for (let i = updatedInner.length - 1; i >= 0; i -= 1) {
+        const ch = updatedInner[i];
+        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') continue;
+        if (ch !== ',') {
+          updatedInner += ',';
+        }
+        break;
+      }
+    }
+
+    const needsNewline = updatedInner && !updatedInner.endsWith('\n');
+    const insert = `${indent}${remoteLine},\n`;
+    const newInner = hasContent
+      ? `${updatedInner}${needsNewline ? '\n' : ''}${insert}`
+      : `\n${insert}`;
+    updatedConfigSource = `{${newInner}}`;
+  }
+
+  const updatedSource =
+    source.slice(0, range.start) +
+    updatedConfigSource +
+    source.slice(range.end + 1);
+  fs.writeFileSync(workflowFile, updatedSource);
+}
+
+function ensureRemotePath(workflowFile, { forceNew = false } = {}) {
+  const existing = readRemotePathFromWorkflow(workflowFile);
+  if (existing && !forceNew) return existing;
+
+  const remotePath = generateSessionToken();
+  writeRemotePathToWorkflow(workflowFile, remotePath);
+  return remotePath;
 }
 
 function readState(workflowDir) {
@@ -145,7 +301,16 @@ function listWorkflows() {
   console.log('');
 }
 
-async function runOrResume(workflowName, { remoteEnabled = false, useLocalServer = false } = {}) {
+async function runOrResume(
+  workflowName,
+  {
+    remoteEnabled = false,
+    useLocalServer = false,
+    forceNewRemotePath = false,
+    preReset = false,
+    preResetHard = false
+  } = {}
+) {
   const workflowDir = resolveWorkflowDir(workflowName);
 
   if (!fs.existsSync(workflowDir)) {
@@ -161,6 +326,12 @@ async function runOrResume(workflowName, { remoteEnabled = false, useLocalServer
   }
 
   const runtime = new WorkflowRuntime(workflowDir);
+  if (preResetHard) {
+    runtime.resetHard();
+  } else if (preReset) {
+    runtime.reset();
+  }
+
   const workflowUrl = pathToFileURL(entry).href;
 
   let localServer = null;
@@ -183,7 +354,8 @@ async function runOrResume(workflowName, { remoteEnabled = false, useLocalServer
 
   // Enable remote follow mode if we have a URL
   if (remoteUrl) {
-    await runtime.enableRemote(remoteUrl);
+    const sessionToken = ensureRemotePath(entry, { forceNew: forceNewRemotePath });
+    await runtime.enableRemote(remoteUrl, { sessionToken });
   }
 
   try {
@@ -227,15 +399,24 @@ async function main() {
     case 'run':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error(`Usage: state-machine ${command} <workflow-name> [--local]`);
+        console.error(`Usage: state-machine ${command} <workflow-name> [--local] [--new] [-reset] [-reset-hard]`);
         process.exit(1);
       }
       {
         // Remote is enabled by default, --local uses local server instead
         const useLocalServer = args.includes('--local') || args.includes('-l');
+        const forceNewRemotePath = args.includes('--new') || args.includes('-n');
+        const preReset = args.includes('-reset');
+        const preResetHard = args.includes('-reset-hard');
         const remoteEnabled = !useLocalServer; // Use Vercel if not local
         try {
-          await runOrResume(workflowName, { remoteEnabled, useLocalServer });
+          await runOrResume(workflowName, {
+            remoteEnabled,
+            useLocalServer,
+            forceNewRemotePath,
+            preReset,
+            preResetHard
+          });
         } catch (err) {
           console.error('Error:', err.message || String(err));
           process.exit(1);
