@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/s/([^/]+)",
+      "dest": "/api/session/[token].js?token=$1"
+    },
+    {
+      "src": "/api/events/([^/]+)",
+      "dest": "/api/events/[token].js?token=$1"
+    },
+    {
+      "src": "/api/history/([^/]+)",
+      "dest": "/api/history/[token].js?token=$1"
+    },
+    {
+      "src": "/api/submit/([^/]+)",
+      "dest": "/api/submit/[token].js?token=$1"
+    },
+    {
+      "src": "/api/ws/cli",
+      "dest": "/api/ws/cli.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
+  ],
+  "env": {
+    "UPSTASH_REDIS_REST_URL": "@upstash_redis_rest_url",
+    "UPSTASH_REDIS_REST_TOKEN": "@upstash_redis_rest_token"
+  }
+}

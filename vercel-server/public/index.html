@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent State Machine - Remote Follow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center">
+  <div class="max-w-lg text-center p-8">
+    <h1 class="text-3xl font-bold mb-4">Agent State Machine</h1>
+    <p class="text-zinc-400 mb-8">Remote Follow Server</p>
+
+    <div class="bg-zinc-900 rounded-lg p-6 text-left">
+      <h2 class="text-lg font-semibold mb-4">How to use</h2>
+
+      <ol class="space-y-4 text-zinc-300">
+        <li class="flex gap-3">
+          <span class="text-zinc-500 font-mono">1.</span>
+          <span>Run your workflow with the <code class="bg-zinc-800 px-2 py-0.5 rounded">--remote</code> flag:</span>
+        </li>
+        <li class="pl-6">
+          <code class="bg-zinc-800 px-3 py-2 rounded block text-sm">
+            state-machine run my-workflow --remote
+          </code>
+        </li>
+
+        <li class="flex gap-3 mt-4">
+          <span class="text-zinc-500 font-mono">2.</span>
+          <span>The CLI will print a unique URL. Share it with anyone who needs to follow along or interact with the workflow.</span>
+        </li>
+
+        <li class="flex gap-3 mt-4">
+          <span class="text-zinc-500 font-mono">3.</span>
+          <span>Open the URL in a browser to see live workflow events and submit interaction responses.</span>
+        </li>
+      </ol>
+    </div>
+
+    <p class="text-zinc-500 text-sm mt-8">
+      Learn more at <a href="https://github.com/anthropics/agent-state-machine" class="text-cyan-400 hover:underline">GitHub</a>
+    </p>
+  </div>
+</body>
+</html>

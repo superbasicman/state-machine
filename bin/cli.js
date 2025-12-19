@@ -23,13 +23,16 @@ function getVersion() {
   }
 }
 
+// Default remote server URL (can be overridden with STATE_MACHINE_REMOTE_URL env var)
+const DEFAULT_REMOTE_URL = process.env.STATE_MACHINE_REMOTE_URL || 'http://localhost:3001';
+
 function printHelp() {
   console.log(`
 Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
-  state-machine run <workflow-name>        Run a workflow (loads existing state)
+  state-machine run <workflow-name> [--remote]  Run a workflow (--remote enables remote follow)
   state-machine follow <workflow-name>    View prompt trace history in browser with live updates
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
@@ -40,8 +43,12 @@ Usage:
 
 Options:
   --setup, -s     Initialize a new workflow with directory structure
+  --remote, -r    Enable remote follow (generates shareable URL for browser access)
   --help, -h      Show help
   --version, -v   Show version
+
+Environment Variables:
+  STATE_MACHINE_REMOTE_URL    Override the default remote server URL
 
 Workflow Structure:
   workflows/<name>/
@@ -136,7 +143,7 @@ function listWorkflows() {
   console.log('');
 }
 
-async function runOrResume(workflowName) {
+async function runOrResume(workflowName, { remoteEnabled = false } = {}) {
   const workflowDir = resolveWorkflowDir(workflowName);
 
   if (!fs.existsSync(workflowDir)) {
@@ -154,7 +161,20 @@ async function runOrResume(workflowName) {
   const runtime = new WorkflowRuntime(workflowDir);
   const workflowUrl = pathToFileURL(entry).href;
 
-  await runtime.runWorkflow(workflowUrl);
+  // Enable remote follow mode if requested
+  if (remoteEnabled) {
+    const remoteUrl = process.env.STATE_MACHINE_REMOTE_URL || DEFAULT_REMOTE_URL;
+    await runtime.enableRemote(remoteUrl);
+  }
+
+  try {
+    await runtime.runWorkflow(workflowUrl);
+  } finally {
+    // Always disable remote on completion
+    if (remoteEnabled) {
+      await runtime.disableRemote();
+    }
+  }
 }
 
 async function main() {
@@ -185,14 +205,17 @@ async function main() {
     case 'run':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error(`Usage: state-machine ${command} <workflow-name>`);
+        console.error(`Usage: state-machine ${command} <workflow-name> [--remote]`);
         process.exit(1);
       }
-      try {
-        await runOrResume(workflowName);
-      } catch (err) {
-        console.error('Error:', err.message || String(err));
-        process.exit(1);
+      {
+        const remoteEnabled = args.includes('--remote') || args.includes('-r');
+        try {
+          await runOrResume(workflowName, { remoteEnabled });
+        } catch (err) {
+          console.error('Error:', err.message || String(err));
+          process.exit(1);
+        }
       }
       break;
 

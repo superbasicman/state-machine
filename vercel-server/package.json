@@ -1,0 +1,16 @@
+{
+  "name": "state-machine-remote",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node local-server.js",
+    "dev": "node local-server.js",
+    "vercel-dev": "vercel dev",
+    "build": "vercel build",
+    "deploy": "vercel deploy"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.28.0"
+  }
+}
