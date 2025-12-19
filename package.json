@@ -27,6 +27,8 @@
   },
   "files": [
     "bin",
-    "lib"
+    "lib",
+    "vercel-server/local-server.js",
+    "vercel-server/public"
   ]
 }

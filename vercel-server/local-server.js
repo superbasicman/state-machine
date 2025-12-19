@@ -7,8 +7,9 @@
  * Usage:
  *   node vercel-server/local-server.js
  *
- * Then run your workflow with:
- *   STATE_MACHINE_REMOTE_URL=http://localhost:3001 state-machine run my-workflow --remote
+ * Or import and start programmatically:
+ *   import { startLocalServer } from './vercel-server/local-server.js';
+ *   const { port, url } = await startLocalServer();
  */
 
 import http from 'http';
@@ -736,25 +737,69 @@ async function handleRequest(req, res) {
   res.end('Not found');
 }
 
-// Create and start server
-const server = http.createServer(handleRequest);
+/**
+ * Start the local server programmatically
+ * @param {number} initialPort - Starting port to try (default 3000)
+ * @param {boolean} silent - Suppress console output
+ * @returns {Promise<{port: number, url: string, server: http.Server}>}
+ */
+export function startLocalServer(initialPort = 3000, silent = false) {
+  return new Promise((resolve, reject) => {
+    let port = initialPort;
+    const maxPort = initialPort + 100;
 
-server.listen(PORT, () => {
-  console.log(`
+    const tryPort = () => {
+      const server = http.createServer(handleRequest);
+
+      server.on('error', (e) => {
+        if (e.code === 'EADDRINUSE') {
+          if (port < maxPort) {
+            port++;
+            tryPort();
+          } else {
+            reject(new Error(`Could not find open port between ${initialPort} and ${maxPort}`));
+          }
+        } else {
+          reject(e);
+        }
+      });
+
+      server.listen(port, () => {
+        const url = `http://localhost:${port}`;
+        if (!silent) {
+          console.log(`Local server running at ${url}`);
+        }
+        resolve({ port, url, server });
+      });
+    };
+
+    tryPort();
+  });
+}
+
+// Run standalone if executed directly
+const isMainModule = process.argv[1] && (
+  process.argv[1].endsWith('local-server.js') ||
+  process.argv[1].endsWith('local-server')
+);
+
+if (isMainModule) {
+  const PORT = process.env.PORT || 3000;
+  startLocalServer(parseInt(PORT, 10)).then(({ port, url }) => {
+    console.log(`
 ┌─────────────────────────────────────────────────────────────┐
 │  Agent State Machine - Local Remote Follow Server           │
 ├─────────────────────────────────────────────────────────────┤
-│  Server running at: http://localhost:${PORT}                   │
+│  Server running at: ${url.padEnd(37)}│
 │                                                             │
 │  To test remote follow, run your workflow with:             │
-│                                                             │
-│  STATE_MACHINE_REMOTE_URL=http://localhost:${PORT} \\          │
-│    state-machine run <workflow-name> --remote               │
-│                                                             │
-│  Or export the env var first:                               │
-│  export STATE_MACHINE_REMOTE_URL=http://localhost:${PORT}      │
+│    state-machine run <workflow-name> --local                │
 │                                                             │
 │  Press Ctrl+C to stop                                       │
 └─────────────────────────────────────────────────────────────┘
 `);
-});
+  }).catch(err => {
+    console.error('Failed to start server:', err.message);
+    process.exit(1);
+  });
+}

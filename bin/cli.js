@@ -6,6 +6,7 @@ import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
 import { startServer } from '../lib/ui/server.js';
+import { startLocalServer } from '../vercel-server/local-server.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,7 +33,8 @@ Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 
 Usage:
   state-machine --setup <workflow-name>    Create a new workflow project
-  state-machine run <workflow-name> [--remote]  Run a workflow (--remote enables remote follow)
+  state-machine run <workflow-name>        Run a workflow (remote follow enabled by default)
+  state-machine run <workflow-name> --local  Run with local server (localhost:3000)
   state-machine follow <workflow-name>    View prompt trace history in browser with live updates
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
@@ -43,12 +45,12 @@ Usage:
 
 Options:
   --setup, -s     Initialize a new workflow with directory structure
-  --remote, -r    Enable remote follow (generates shareable URL for browser access)
+  --local, -l     Use local server instead of remote (starts on localhost:3000)
   --help, -h      Show help
   --version, -v   Show version
 
 Environment Variables:
-  STATE_MACHINE_REMOTE_URL    Override the default remote server URL
+  STATE_MACHINE_REMOTE_URL    Override the default remote server URL (for local dev testing)
 
 Workflow Structure:
   workflows/<name>/
@@ -143,7 +145,7 @@ function listWorkflows() {
   console.log('');
 }
 
-async function runOrResume(workflowName, { remoteEnabled = false } = {}) {
+async function runOrResume(workflowName, { remoteEnabled = false, useLocalServer = false } = {}) {
   const workflowDir = resolveWorkflowDir(workflowName);
 
   if (!fs.existsSync(workflowDir)) {
@@ -161,18 +163,38 @@ async function runOrResume(workflowName, { remoteEnabled = false } = {}) {
   const runtime = new WorkflowRuntime(workflowDir);
   const workflowUrl = pathToFileURL(entry).href;
 
-  // Enable remote follow mode if requested
-  if (remoteEnabled) {
-    const remoteUrl = process.env.STATE_MACHINE_REMOTE_URL || DEFAULT_REMOTE_URL;
+  let localServer = null;
+  let remoteUrl = null;
+
+  // Start local server if --local flag is used
+  if (useLocalServer) {
+    try {
+      const result = await startLocalServer(3000, true);
+      localServer = result.server;
+      remoteUrl = result.url;
+      console.log(`Local server started at ${remoteUrl}`);
+    } catch (err) {
+      console.error(`Failed to start local server: ${err.message}`);
+      process.exit(1);
+    }
+  } else if (remoteEnabled) {
+    remoteUrl = process.env.STATE_MACHINE_REMOTE_URL || DEFAULT_REMOTE_URL;
+  }
+
+  // Enable remote follow mode if we have a URL
+  if (remoteUrl) {
     await runtime.enableRemote(remoteUrl);
   }
 
   try {
     await runtime.runWorkflow(workflowUrl);
   } finally {
-    // Always disable remote on completion
-    if (remoteEnabled) {
+    // Cleanup
+    if (remoteUrl) {
       await runtime.disableRemote();
+    }
+    if (localServer) {
+      localServer.close();
     }
   }
 }
@@ -205,13 +227,15 @@ async function main() {
     case 'run':
       if (!workflowName) {
         console.error('Error: Workflow name required');
-        console.error(`Usage: state-machine ${command} <workflow-name> [--remote]`);
+        console.error(`Usage: state-machine ${command} <workflow-name> [--local]`);
         process.exit(1);
       }
       {
-        const remoteEnabled = args.includes('--remote') || args.includes('-r');
+        // Remote is enabled by default, --local uses local server instead
+        const useLocalServer = args.includes('--local') || args.includes('-l');
+        const remoteEnabled = !useLocalServer; // Use Vercel if not local
         try {
-          await runOrResume(workflowName, { remoteEnabled });
+          await runOrResume(workflowName, { remoteEnabled, useLocalServer });
         } catch (err) {
           console.error('Error:', err.message || String(err));
           process.exit(1);
