@@ -59,9 +59,21 @@ export default async function handler(req, res) {
     const eventsListKey = `${KEYS.events(token)}:list`;
     let lastEventIndex = 0;
 
-    // Get current list length to start from
+    // If history is empty, seed from the event list to catch early events.
     const currentLength = await redis.llen(eventsListKey);
-    lastEventIndex = currentLength;
+    // if (history.length === 0 && currentLength > 0) {
+    //   const existingEvents = await redis.lrange(eventsListKey, 0, -1);
+    //   const entries = existingEvents
+    //     .map((event) => (typeof event === 'object' ? event : JSON.parse(event)))
+    //     .filter(Boolean);
+    //   res.write(`data: ${JSON.stringify({
+    //     type: 'history',
+    //     entries,
+    //   })}\n\n`);
+    //   lastEventIndex = currentLength;
+    // } else {
+    //   lastEventIndex = currentLength;
+    // }
 
     const pollInterval = setInterval(async () => {
       try {

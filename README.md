@@ -44,11 +44,11 @@ Requirements: Node.js >= 16.
 ```bash
 state-machine --setup <workflow-name>
 state-machine run <workflow-name>
+state-machine run <workflow-name> -reset
+state-machine run <workflow-name> -reset-hard
 
 
 state-machine history <workflow-name> [limit]
-state-machine reset <workflow-name> (clears memory/state)
-state-machine reset-hard <workflow-name> (clears everything: history/interactions/memory)
 ```
 
 Workflows live in:
@@ -140,7 +140,7 @@ export default async function() {
 
 `state-machine run` restarts your workflow from the top, loading the persisted state.
 
-If the workflow needs human input, it will **block inline** in the terminal. You’ll be told which `interactions/<slug>.md` file to edit; after you fill it in, press `y` in the same terminal session to continue.
+If the workflow needs human input, it will **block inline** in the terminal. You can answer in the terminal, edit `interactions/<slug>.md`, or respond in the browser.
 
 If the process is interrupted, running `state-machine run <workflow-name>` again will continue execution (assuming your workflow uses `memory` to skip completed steps).
 
@@ -172,8 +172,8 @@ memory.count = (memory.count || 0) + 1;
 
 Gets user input.
 
-- In a TTY, it prompts in the terminal.
-- Otherwise it creates `interactions/<slug>.md` and blocks until you confirm in the terminal.
+- In a TTY, it prompts in the terminal (or via the browser when remote follow is enabled).
+- Otherwise it creates `interactions/<slug>.md` and blocks until you confirm in the terminal (or respond in the browser).
 
 ```js
 const repo = await initialPrompt('What repo should I work on?', { slug: 'repo' });
@@ -298,7 +298,7 @@ export const config = {
 };
 ```
 
-The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL.
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL. Remote follow links persist across runs (stored in `workflow.js` config) unless you pass `-n`/`--new` to regenerate.
 
 ---
 

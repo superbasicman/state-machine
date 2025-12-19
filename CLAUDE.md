@@ -24,13 +24,14 @@ state-machine --setup <workflow-name>
 
 # Run a workflow
 state-machine run <workflow-name>
+state-machine run <workflow-name> -reset
+state-machine run <workflow-name> -reset-hard
+state-machine run <workflow-name> -n  # Regenerate remote follow link
+  # Remote follow links persist across runs and are stored in the workflow config.
 
 # Inspect / debug
-state-machine follow <workflow-name>
 state-machine history <workflow-name> [limit]
 state-machine status <workflow-name>
-state-machine reset <workflow-name> (clears memory/state)
-state-machine reset-hard <workflow-name> (clears everything: history/interactions/memory)
 
 # List all workflows under ./workflows
 state-machine list
@@ -177,7 +178,7 @@ Supported frontmatter knobs (non-exhaustive, based on current implementation):
 Two ways a workflow can wait for input:
 
 1) `initialPrompt(...)`
-- Prompts directly in the terminal (TTY) or creates an `interactions/<slug>.md` file and waits for confirmation (non-TTY).
+- It will **block inline** in the terminal. You can answer in the terminal, edit `interactions/<slug>.md`, or respond in the browser.
 
 2) A JS agent returns an interaction request:
 
@@ -193,7 +194,7 @@ return {
 
 When an interaction is requested, the runtime:
 1. Creates/updates the interaction file.
-2. Blocks execution and prompts the user in the terminal to press `y` after editing.
+2. Blocks execution and prompts the user in the terminal to press `y` after editing interactions/<slug>.md or accepts a browser response.
 3. Reads the response and continues execution immediately—**no re-running required**.
 
 ---
