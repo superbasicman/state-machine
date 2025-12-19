@@ -893,17 +893,9 @@
 
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="min-w-0 flex items-center gap-3">
-                                            <div className="text-[12px] tracking-[0.24em] font-semibold whitespace-nowrap" style={{ color: "var(--muted)" }}>
-                                                {token ? "REMOTE FOLLOW" : "LOCAL TERMINAL"}
-                                            </div>
-
-                                            <span className="text-[12px] tracking-[0.24em] font-semibold" style={{ color: "var(--muted)" }}>•</span>
-
-                                            <h1 className="text-[14px] tracking-[0.06em] font-semibold truncate">
+                                            <div className="text-[12px] tracking-[0.24em] font-semibold uppercase whitespace-nowrap" style={{ color: "var(--muted)" }}>
                                                 {workflowName || "WORKFLOW"}
-                                            </h1>
-
-                                            <span className="text-[12px] tracking-[0.24em] font-semibold" style={{ color: "var(--muted)" }}>•</span>
+                                            </div>
 
                                             <StatusBadge status={status} />
                                         </div>
