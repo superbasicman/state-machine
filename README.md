@@ -101,8 +101,8 @@ export default async function() {
   console.log('Starting project-builder workflow...');
 
   // Example: Get user input (saved to memory)
-  const answer = await initialPrompt('Where do you live?');
-  console.log('Example prompt answer:', answer);
+  const userLocation = await initialPrompt('Where do you live?');
+  console.log('Example prompt answer:', userLocation);
 
   const userInfo = await agent('yoda-name-collector');
   memory.userInfo = userInfo;
@@ -113,7 +113,7 @@ export default async function() {
   console.log('Example agent memory.userInfo:', memory.userInfo || userInfo);
 
   // Context is provided automatically
-  const { greeting } = await agent('yoda-greeter');
+  const { greeting } = await agent('yoda-greeter', { userLocation });
   console.log('Example agent greeting:', greeting);
 
   // Or you can provide context manually
