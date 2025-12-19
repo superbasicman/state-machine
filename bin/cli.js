@@ -361,13 +361,17 @@ async function runOrResume(
   try {
     await runtime.runWorkflow(workflowUrl);
   } finally {
-    // Cleanup
-    if (remoteUrl) {
+    // Keep local server alive after run so the session remains accessible.
+    if (!useLocalServer && remoteUrl) {
       await runtime.disableRemote();
     }
-    if (localServer) {
+    if (!useLocalServer && localServer) {
       localServer.close();
     }
+  }
+
+  if (useLocalServer) {
+    console.log('Local server still running for follow session. Press Ctrl+C to stop.');
   }
 }
 
