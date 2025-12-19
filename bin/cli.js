@@ -24,7 +24,7 @@ function getVersion() {
 }
 
 // Default remote server URL (can be overridden with STATE_MACHINE_REMOTE_URL env var)
-const DEFAULT_REMOTE_URL = process.env.STATE_MACHINE_REMOTE_URL || 'http://localhost:3001';
+const DEFAULT_REMOTE_URL = process.env.STATE_MACHINE_REMOTE_URL || 'https://supamachine.vercel.app';
 
 function printHelp() {
   console.log(`
