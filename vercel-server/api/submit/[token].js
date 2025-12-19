@@ -6,8 +6,7 @@
 
 import {
   getSession,
-  addHistoryEvent,
-  publishEvent,
+  addEvent,
   redis,
   KEYS,
 } from '../../lib/redis.js';
@@ -68,22 +67,14 @@ export default async function handler(req, res) {
     // Set TTL on pending list
     await redis.expire(pendingKey, 300); // 5 minutes
 
-    // Log event to history (include answer preview)
-    const event = {
+    // Log event to events list (single source of truth for UI)
+    await addEvent(token, {
       timestamp: new Date().toISOString(),
       event: 'INTERACTION_SUBMITTED',
       slug,
       targetKey: targetKey || `_interaction_${slug}`,
       answer: response.substring(0, 200) + (response.length > 200 ? '...' : ''),
       source: 'remote',
-    };
-
-    await addHistoryEvent(token, event);
-
-    // Notify other browsers
-    await publishEvent(token, {
-      type: 'event',
-      ...event,
     });
 
     return res.status(200).json({ success: true });
