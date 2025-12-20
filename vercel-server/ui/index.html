@@ -219,7 +219,7 @@
     </script>
 
     <script type="text/babel">
-        const { useEffect, useMemo, useState } = React;
+        const { useEffect, useMemo, useRef, useState } = React;
 
         const Icon = ({ name }) => {
             const common = "w-4 h-4";
@@ -388,6 +388,18 @@
         function InteractionForm({ interaction, onSubmit, disabled }) {
             const [response, setResponse] = useState("");
             const [submitting, setSubmitting] = useState(false);
+            const textareaRef = useRef(null);
+
+            useEffect(() => {
+                setResponse(interaction.question || "");
+            }, [interaction.slug, interaction.question]);
+
+            useEffect(() => {
+                const el = textareaRef.current;
+                if (!el) return;
+                el.style.height = "auto";
+                el.style.height = `${el.scrollHeight}px`;
+            }, [response]);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -408,8 +420,8 @@
                             <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
                                 INPUT REQUIRED
                             </div>
-                            <div className="mt-2 text-[13px] leading-relaxed markdown-body">
-                                {interaction.question || "Please provide your input."}
+                            <div className="mt-2 text-[12px] tracking-[0.16em] uppercase" style={{ color: "var(--muted)" }}>
+                                Safe to delete all text and type your answer.
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -419,17 +431,17 @@
 
                     <form onSubmit={handleSubmit} className="px-6 py-5">
                         <textarea
+                            ref={textareaRef}
                             value={response}
                             onChange={(e) => setResponse(e.target.value)}
                             disabled={disabled || submitting}
-                            placeholder="Type response…"
                             className="w-full rounded-2xl hairline p-4 text-[13px] leading-relaxed min-h-[120px]"
                             style={{
                                 background: "transparent",
                                 color: "var(--fg)",
                                 borderColor: "var(--hairline)",
                                 outline: "none",
-                                resize: "vertical",
+                                resize: "none",
                                 direction: "ltr",
                                 textAlign: "left",
                             }}
