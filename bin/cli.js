@@ -2,6 +2,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import readline from 'readline';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
@@ -68,6 +69,28 @@ Workflow Structure:
   ├── state/             # current.json, history.jsonl
   └── steering/          # global.md + config.json
 `);
+}
+
+async function confirmHardReset(workflowName) {
+  if (!process.stdin.isTTY) {
+    console.error('Error: Hard reset requires confirmation in a TTY.');
+    return false;
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
+  try {
+    const answer = String(
+      await ask(
+        `Hard reset deletes history, interactions, and memory for '${workflowName}'. Type 'y' to continue: `
+      )
+    )
+      .trim()
+      .toLowerCase();
+    return answer === 'y' || answer === 'yes';
+  } finally {
+    rl.close();
+  }
 }
 
 function workflowsRoot() {
@@ -327,6 +350,11 @@ async function runOrResume(
 
   const runtime = new WorkflowRuntime(workflowDir);
   if (preResetHard) {
+    const confirmed = await confirmHardReset(workflowName);
+    if (!confirmed) {
+      console.log('Hard reset cancelled.');
+      return;
+    }
     runtime.resetHard();
   } else if (preReset) {
     runtime.reset();
@@ -478,6 +506,11 @@ async function main() {
       {
         const workflowDir = resolveWorkflowDir(workflowName);
         const runtime = new WorkflowRuntime(workflowDir);
+        const confirmed = await confirmHardReset(workflowName);
+        if (!confirmed) {
+          console.log('Hard reset cancelled.');
+          process.exit(0);
+        }
         runtime.resetHard();
       }
       break;
