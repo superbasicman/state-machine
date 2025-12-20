@@ -107,6 +107,14 @@
             white-space: pre-wrap;
         }
 
+        .agent-prompt summary {
+            list-style: none;
+        }
+
+        .agent-prompt summary::-webkit-details-marker {
+            display: none;
+        }
+
         @keyframes blink {
 
             0%,
@@ -678,20 +686,27 @@
                         return wrapIO(
                             "left",
                             <section className="hairline rounded-2xl rounded-tl-none overflow-hidden io-in">
-                                <div className="rtl-safe px-5 py-4 divider flex items-center justify-between">
-                                    <div>
-                                        <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
-                                            AGENT STARTED
+                                <details className="agent-prompt">
+                                    <summary className="rtl-safe px-5 py-4 divider cursor-pointer">
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div>
+                                                <div className="text-[11px] tracking-[0.22em] font-semibold" style={{ color: "var(--muted)" }}>
+                                                    AGENT STARTED
+                                                </div>
+                                                <div className="mt-1 text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
+                                                    {(item.agent || "").toString()} • {time}
+                                                </div>
+                                            </div>
+                                            <CopyButton text={item.prompt} />
                                         </div>
-                                        <div className="mt-1 text-[11px] tracking-[0.14em]" style={{ color: "var(--muted)" }}>
-                                            {(item.agent || "").toString()} • {time}
+                                        <div className="mt-3 text-[11px] tracking-[0.18em] font-semibold uppercase" style={{ color: "var(--muted)" }}>
+                                            Show Prompt ▼
                                         </div>
+                                    </summary>
+                                    <div className="px-5 py-4">
+                                        <div className="markdown-body text-[13px] leading-relaxed overflow-x-auto">{item.prompt}</div>
                                     </div>
-                                    <CopyButton text={item.prompt} />
-                                </div>
-                                <div className="px-5 py-4">
-                                    <div className="markdown-body text-[13px] leading-relaxed overflow-x-auto">{item.prompt}</div>
-                                </div>
+                                </details>
                             </section>,
                             idx
                         );
