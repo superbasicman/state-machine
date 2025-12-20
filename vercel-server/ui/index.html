@@ -667,14 +667,12 @@
                     return wrapIO(
                         "center",
                         <section className="text-center">
-                            <div className="divider" />
                             <div className="py-4">
                                 <div className="text-[11px] tracking-[0.24em] font-semibold" style={{ color: "var(--muted)" }}>
                                     {item.event.replace("WORKFLOW_", "")} • {time}
                                 </div>
                                 {item.error && <div className="mt-3 text-[13px] leading-relaxed markdown-body">{item.error}</div>}
                             </div>
-                            <div className="divider" />
                         </section>,
                         idx
                     );
