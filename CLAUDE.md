@@ -10,7 +10,7 @@ Agent State Machine is a **native JavaScript workflow runner**.
 You write a workflow as normal `async/await` JavaScript, and the runtime provides:
 - `agent(name, params?)` for running specialized task handlers
 - `memory` that **persists to disk** on mutation
-- Human-in-the-loop blocking through `initialPrompt()` and agent-driven interactions
+- Human-in-the-loop blocking through `askHuman()` and agent-driven interactions
 - Agents implemented as **JS modules** or **Markdown prompt templates**
 - LLM calls via local CLI tools or provider APIs
 
@@ -59,7 +59,7 @@ For local development, `npm link` is the simplest way to use the CLI globally.
     - API targets using `api:<provider>:<model>` with keys from workflow config
   - Captures full prompt traces in `history.jsonl`.
 - `lib/index.js`
-  - Public exports used by workflows and agents (`agent`, `memory`, `initialPrompt`, `parallel`, `llm`, etc.).
+  - Public exports used by workflows and agents (`agent`, `memory`, `askHuman`, `parallel`, `llm`, etc.).
 
 ### Workflow folder layout (created by `--setup`)
 
@@ -80,7 +80,7 @@ workflows/<name>/
 Workflows are plain JS modules that export a default async function:
 
 ```js
-import { agent, memory, initialPrompt, parallel } from 'agent-state-machine';
+import { agent, memory, askHuman, parallel } from 'agent-state-machine';
 
 export const config = {
   models: {
@@ -93,7 +93,7 @@ export const config = {
 };
 
 export default async function () {
-  const topic = await initialPrompt('What should we work on?', { slug: 'topic' });
+  const topic = await askHuman('What should we work on?', { slug: 'topic' });
   memory.topic = topic;
 
   const result = await agent('research', { topic });
@@ -177,7 +177,7 @@ Supported frontmatter knobs (non-exhaustive, based on current implementation):
 
 Two ways a workflow can wait for input:
 
-1) `initialPrompt(...)`
+1) `askHuman(...)`
 - It will **block inline** in the terminal. You can answer in the terminal, edit `interactions/<slug>.md`, or respond in the browser.
 
 2) A JS agent returns an interaction request:

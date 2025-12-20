@@ -32,5 +32,8 @@
     "vercel-server/public",
     "vercel-server/ui",
     "vercel-server/api"
-  ]
+  ],
+  "devDependencies": {
+    "nodemailer": "^7.0.11"
+  }
 }

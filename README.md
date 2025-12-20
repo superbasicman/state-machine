@@ -4,7 +4,7 @@ A workflow runner for building **linear, stateful agent workflows** in plain Jav
 
 You write normal `async/await` code. The runtime handles:
 - **Auto-persisted** `memory` (saved to disk on mutation)
-- **Human-in-the-loop** blocking via `initialPrompt()` or agent-driven interactions
+- **Human-in-the-loop** blocking via `askHuman()` or agent-driven interactions
 - Local **JS agents** + **Markdown agents** (LLM-powered)
 
 ---
@@ -80,7 +80,7 @@ workflows/<name>/
  * - Interactive prompts pause and wait for user input
  */
 
-import { agent, memory, initialPrompt, parallel } from 'agent-state-machine';
+import { agent, memory, askHuman, parallel } from 'agent-state-machine';
 import { notify } from './scripts/mac-notification.js';
 
 // Model configuration (also supports models in a separate config export)
@@ -101,7 +101,7 @@ export default async function() {
   console.log('Starting project-builder workflow...');
 
   // Example: Get user input (saved to memory)
-  const userLocation = await initialPrompt('Where do you live?');
+  const userLocation = await askHuman('Where do you live?');
   console.log('Example prompt answer:', userLocation);
 
   const userInfo = await agent('yoda-name-collector');
@@ -168,7 +168,7 @@ A persisted object for your workflow.
 memory.count = (memory.count || 0) + 1;
 ```
 
-### `initialPrompt(question, options?)`
+### `askHuman(question, options?)`
 
 Gets user input.
 
@@ -176,7 +176,7 @@ Gets user input.
 - Otherwise it creates `interactions/<slug>.md` and blocks until you confirm in the terminal (or respond in the browser).
 
 ```js
-const repo = await initialPrompt('What repo should I work on?', { slug: 'repo' });
+const repo = await askHuman('What repo should I work on?', { slug: 'repo' });
 memory.repo = repo;
 ```
 
