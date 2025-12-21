@@ -22,6 +22,7 @@ You write a workflow as normal `async/await` JavaScript, and the runtime provide
 ```bash
 # Scaffold a new workflow folder
 state-machine --setup <workflow-name>
+state-machine --setup <workflow-name> --template <template-name>
 
 # Run a workflow
 state-machine run <workflow-name>
@@ -31,6 +32,8 @@ state-machine run <workflow-name> -n  # Regenerate remote follow link
   # Remote follow links persist across runs and are stored in the workflow config.
 
 # Inspect / debug
+state-machine -reset <workflow-name>
+state-machine -reset-hard <workflow-name>
 state-machine history <workflow-name> [limit]
 state-machine status <workflow-name>
 
@@ -39,6 +42,8 @@ state-machine list
 ```
 
 For local development, `npm link` is the simplest way to use the CLI globally.
+
+Templates live under `templates/` and `starter` is the default.
 
 ---
 

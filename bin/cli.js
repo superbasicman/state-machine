@@ -13,8 +13,13 @@ import { startLocalServer } from '../vercel-server/local-server.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const args = process.argv.slice(2);
-const command = args[0];
+let args = process.argv.slice(2);
+let command = args[0];
+const legacyResetCommand = command === '-reset' || command === '-reset-hard';
+if (legacyResetCommand) {
+  command = command.slice(1);
+  args = [command, ...args.slice(1)];
+}
 
 function getVersion() {
   try {
@@ -34,13 +39,15 @@ function printHelp() {
 Agent State Machine CLI (Native JS Workflows Only) v${getVersion()}
 
 Usage:
-  state-machine --setup <workflow-name>    Create a new workflow project
+  state-machine --setup <workflow-name> [--template <template-name>]    Create a new workflow project
   state-machine run <workflow-name>        Run a workflow (remote follow enabled by default)
   state-machine run <workflow-name> -l  Run with local server (localhost:3000)
   state-machine run <workflow-name> -n  Generate a new remote follow path
   state-machine run <workflow-name> -reset  Reset workflow state before running
   state-machine run <workflow-name> -reset-hard  Hard reset workflow before running
 
+  state-machine -reset <workflow-name>     Reset workflow state (legacy alias)
+  state-machine -reset-hard <workflow-name> Hard reset workflow (legacy alias)
   state-machine status [workflow-name]     Show current state (or list all)
   state-machine history <workflow-name> [limit]  Show execution history logs
   state-machine reset <workflow-name>      Reset workflow state (clears memory/state)
@@ -50,6 +57,7 @@ Usage:
 
 Options:
   --setup, -s     Initialize a new workflow with directory structure
+  --template, -t  Template name for --setup (default: starter)
   --local, -l     Use local server instead of remote (starts on localhost:3000)
   --new, -n       Generate a new remote follow path
   -reset          Reset workflow state before running
@@ -421,10 +429,20 @@ async function main() {
     const workflowName = args[1];
     if (!workflowName) {
       console.error('Error: Workflow name required');
-      console.error('Usage: state-machine --setup <workflow-name>');
+      console.error('Usage: state-machine --setup <workflow-name> [--template <template-name>]');
       process.exit(1);
     }
-    await setup(workflowName);
+    const templateFlagIndex = args.findIndex((arg) => arg === '--template' || arg === '-t');
+    let templateName = null;
+    if (templateFlagIndex !== -1) {
+      templateName = args[templateFlagIndex + 1];
+      if (!templateName || templateName.startsWith('-')) {
+        console.error('Error: Template name required');
+        console.error('Usage: state-machine --setup <workflow-name> [--template <template-name>]');
+        process.exit(1);
+      }
+    }
+    await setup(workflowName, { template: templateName || undefined });
     process.exit(0);
   }
 

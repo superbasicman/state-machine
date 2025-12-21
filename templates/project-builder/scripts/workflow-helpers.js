@@ -1,0 +1,167 @@
+import fs from 'fs';
+import path from 'path';
+import { agent, memory } from 'agent-state-machine';
+
+// Normalize agent output - always extract the result consistently
+function unwrap(agentResult) {
+  if (!agentResult) return null;
+  if (typeof agentResult === 'object' && 'result' in agentResult) {
+    return agentResult.result;
+  }
+  return agentResult;
+}
+
+// Write markdown file to workflow state directory
+function writeMarkdownFile(stateDir, filename, content) {
+  if (!fs.existsSync(stateDir)) fs.mkdirSync(stateDir, { recursive: true });
+  const filePath = path.join(stateDir, filename);
+  fs.writeFileSync(filePath, content);
+  console.log(`  [File] Updated: ${filename}`);
+  return filePath;
+}
+
+// Strict approval parsing - only accepts explicit approval
+function isApproval(response) {
+  if (!response || typeof response !== 'string') return false;
+  const trimmed = response.trim().toLowerCase();
+  // Must start with 'a' or be exactly 'approve/approved/yes/y'
+  return /^a\b/.test(trimmed) ||
+         /^approve/.test(trimmed) ||
+         /^yes\b/.test(trimmed) ||
+         /^y\b/.test(trimmed);
+}
+
+// Generate markdown from roadmap JSON
+function renderRoadmapMarkdown(roadmap) {
+  if (!roadmap || !roadmap.phases) return '# Project Roadmap\n\nNo phases defined.';
+
+  let md = `# Project Roadmap: ${roadmap.title || 'Untitled Project'}\n\n`;
+
+  for (const phase of roadmap.phases) {
+    const status = phase.completed ? ' [COMPLETED]' : '';
+    md += `## Phase ${phase.number}: ${phase.title}${status}\n`;
+    md += `**Objective:** ${phase.objective || 'No objective specified'}\n\n`;
+
+    for (const item of phase.checklist || []) {
+      const check = item.completed ? 'x' : ' ';
+      md += `- [${check}] ${item.text}\n`;
+    }
+    md += '\n';
+  }
+
+  if (roadmap.notes && roadmap.notes.length > 0) {
+    md += '---\n\n**Notes:**\n';
+    for (const note of roadmap.notes) {
+      md += `- ${note}\n`;
+    }
+  }
+
+  return md;
+}
+
+// Generate markdown from tasks JSON
+function renderTasksMarkdown(phaseNumber, phaseTitle, tasks) {
+  if (!tasks || !Array.isArray(tasks)) return `# Phase ${phaseNumber} Tasks\n\nNo tasks defined.`;
+
+  let md = `# Phase ${phaseNumber} Tasks: ${phaseTitle}\n\n`;
+
+  for (const task of tasks) {
+    const status = task.stage === 'completed' ? ' [COMPLETED]' :
+                   task.stage === 'in_progress' ? ' [IN PROGRESS]' : '';
+    md += `## Task ${task.id}: ${task.title}${status}\n`;
+    md += `**Description:** ${task.description || 'No description'}\n\n`;
+    md += `**Definition of Done:**\n- ${task.doneDefinition || 'Task completed successfully'}\n\n`;
+    md += `**Sanity Check:**\n- ${task.sanityCheck || 'Review the implementation and confirm it meets requirements.'}\n\n`;
+    md += '---\n\n';
+  }
+
+  md += '## Checklist Summary\n';
+  for (const task of tasks) {
+    const check = task.stage === 'completed' ? 'x' : ' ';
+    md += `- [${check}] Task ${task.id}: ${task.title}\n`;
+  }
+
+  return md;
+}
+
+// Run agent with error handling and retry capability
+async function safeAgent(name, params, options = {}) {
+  const { maxRetries = 1, onError } = options;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await agent(name, params);
+      return unwrap(result);
+    } catch (error) {
+      lastError = error;
+      console.error(`  [Agent: ${name}] Error (attempt ${attempt}/${maxRetries}): ${error.message}`);
+
+      if (onError) {
+        const shouldRetry = await onError(error, attempt);
+        if (!shouldRetry) break;
+      }
+
+      if (attempt < maxRetries) {
+        console.log(`  [Agent: ${name}] Retrying...`);
+      }
+    }
+  }
+
+  // Store error in memory for debugging
+  if (!memory._errors) memory._errors = [];
+  memory._errors.push({
+    agent: name,
+    error: lastError?.message,
+    timestamp: new Date().toISOString()
+  });
+
+  throw lastError;
+}
+
+// Task stage management
+const TASK_STAGES = {
+  PENDING: 'pending',
+  SECURITY_PRE: 'security_pre',
+  TEST_PLANNING: 'test_planning',
+  IMPLEMENTING: 'implementing',
+  CODE_REVIEW: 'code_review',
+  SECURITY_POST: 'security_post',
+  AWAITING_APPROVAL: 'awaiting_approval',
+  COMPLETED: 'completed',
+  FAILED: 'failed'
+};
+
+function getTaskStage(phaseIndex, taskId) {
+  const key = `phase_${phaseIndex}_task_${taskId}_stage`;
+  return memory[key] || TASK_STAGES.PENDING;
+}
+
+function setTaskStage(phaseIndex, taskId, stage) {
+  const key = `phase_${phaseIndex}_task_${taskId}_stage`;
+  memory[key] = stage;
+}
+
+function getTaskData(phaseIndex, taskId, dataKey) {
+  const key = `phase_${phaseIndex}_task_${taskId}_${dataKey}`;
+  return memory[key];
+}
+
+function setTaskData(phaseIndex, taskId, dataKey, value) {
+  const key = `phase_${phaseIndex}_task_${taskId}_${dataKey}`;
+  memory[key] = value;
+}
+
+export {
+  unwrap,
+  writeMarkdownFile,
+  isApproval,
+  renderRoadmapMarkdown,
+  renderTasksMarkdown,
+  safeAgent,
+  TASK_STAGES,
+  getTaskStage,
+  setTaskStage,
+  getTaskData,
+  setTaskData
+};

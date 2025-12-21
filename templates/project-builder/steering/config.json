@@ -1,0 +1,5 @@
+{
+  "_comment": "Steering configuration",
+  "enabled": true,
+  "globalPrompt": "global.md"
+}

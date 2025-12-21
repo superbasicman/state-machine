@@ -44,13 +44,18 @@ Requirements: Node.js >= 16.
 
 ```bash
 state-machine --setup <workflow-name>
+state-machine --setup <workflow-name> --template <template-name>
 state-machine run <workflow-name>
 state-machine run <workflow-name> -reset
 state-machine run <workflow-name> -reset-hard
 
+state-machine -reset <workflow-name>
+state-machine -reset-hard <workflow-name>
 
 state-machine history <workflow-name> [limit]
 ```
+
+Templates live in `templates/` and `starter` is used by default.
 
 Workflows live in:
 
