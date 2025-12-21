@@ -28,6 +28,7 @@
   "files": [
     "bin",
     "lib",
+    "templates",
     "vercel-server/local-server.js",
     "vercel-server/public",
     "vercel-server/ui",
