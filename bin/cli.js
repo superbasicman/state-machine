@@ -276,6 +276,7 @@ function summarizeStatus(state) {
   if (s === 'COMPLETED') return ' [completed]';
   if (s === 'FAILED') return ' [failed - can resume]';
   if (s === 'PAUSED') return ' [paused - can resume]';
+  if (s === 'STOPPED') return ' [stopped - can resume]';
   if (s === 'RUNNING') return ' [running]';
   if (s === 'IDLE') return ' [idle]';
   return state.status ? ` [${state.status}]` : '';

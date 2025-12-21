@@ -491,8 +491,16 @@
 
                 const resolvedSlugs = new Set();
                 let pending = null;
+                let workflowEnded = false;
 
                 for (const entry of history) {
+                    // Check if workflow has ended (stopped, completed, or failed)
+                    if (entry.event === "WORKFLOW_STOPPED" ||
+                        entry.event === "WORKFLOW_COMPLETED" ||
+                        entry.event === "WORKFLOW_FAILED") {
+                        workflowEnded = true;
+                    }
+
                     const isResolution =
                         entry.event === "INTERACTION_RESOLVED" ||
                         entry.event === "PROMPT_ANSWERED" ||
@@ -510,7 +518,8 @@
                     }
                 }
 
-                setPendingInteraction(pending);
+                // Clear pending interaction if workflow has ended
+                setPendingInteraction(workflowEnded ? null : pending);
             }, [history]);
 
             const fetchData = async () => {
@@ -520,8 +529,20 @@
                     if (data.entries) setHistory(data.entries);
                     if (data.workflowName) setWorkflowName(data.workflowName);
 
-                    if (token && data.cliConnected !== undefined) setStatus(data.cliConnected ? "connected" : "disconnected");
-                    else if (!token) setStatus("connected");
+                    // Check if workflow has ended (look for ending events in history)
+                    const workflowEnded = data.entries?.some(
+                        (e) => e.event === "WORKFLOW_STOPPED" ||
+                               e.event === "WORKFLOW_COMPLETED" ||
+                               e.event === "WORKFLOW_FAILED"
+                    );
+
+                    if (workflowEnded) {
+                        setStatus("disconnected");
+                    } else if (token && data.cliConnected !== undefined) {
+                        setStatus(data.cliConnected ? "connected" : "disconnected");
+                    } else if (!token) {
+                        setStatus("connected");
+                    }
 
                     setLoading(false);
                     return true;
@@ -569,6 +590,13 @@
                                     break;
                                 case "history":
                                     setHistory(data.entries || []);
+                                    // Check if workflow has ended
+                                    const historyEnded = data.entries?.some(
+                                        (e) => e.event === "WORKFLOW_STOPPED" ||
+                                               e.event === "WORKFLOW_COMPLETED" ||
+                                               e.event === "WORKFLOW_FAILED"
+                                    );
+                                    if (historyEnded) setStatus("disconnected");
                                     break;
                                 case "event":
                                     setHistory((prev) => {
@@ -578,6 +606,12 @@
                                         }
                                         return [data, ...prev];
                                     });
+                                    // Set status to disconnected when workflow ends
+                                    if (data.event === "WORKFLOW_STOPPED" ||
+                                        data.event === "WORKFLOW_COMPLETED" ||
+                                        data.event === "WORKFLOW_FAILED") {
+                                        setStatus("disconnected");
+                                    }
                                     break;
                                 case "cli_connected":
                                 case "cli_reconnected":
