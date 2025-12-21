@@ -56,6 +56,7 @@ Workflows live in:
 ```text
 workflows/<name>/
 ├── workflow.js        # Native JS workflow (async/await)
+├── config.js          # Model/API key configuration
 ├── package.json       # Sets "type": "module" for this workflow folder
 ├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
 ├── interactions/      # Human-in-the-loop files (auto-created)
@@ -66,6 +67,8 @@ workflows/<name>/
 ---
 
 ## Writing workflows (native JS)
+
+Edit `config.js` to set models and API keys for the workflow.
 
 ```js
 /**
@@ -82,20 +85,6 @@ workflows/<name>/
 
 import { agent, memory, askHuman, parallel } from 'agent-state-machine';
 import { notify } from './scripts/mac-notification.js';
-
-// Model configuration (also supports models in a separate config export)
-export const config = {
-  models: {
-    low: "gemini",
-    med: "codex --model gpt-5.2",
-    high: "claude -m claude-opus-4-20250514 -p",
-  },
-  apiKeys: {
-    gemini: process.env.GEMINI_API_KEY,
-    anthropic: process.env.ANTHROPIC_API_KEY,
-    openai: process.env.OPENAI_API_KEY,
-  }
-};
 
 export default async function() {
   console.log('Starting project-builder workflow...');
@@ -298,7 +287,7 @@ export const config = {
 };
 ```
 
-The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL. Remote follow links persist across runs (stored in `workflow.js` config) unless you pass `-n`/`--new` to regenerate.
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL. Remote follow links persist across runs (stored in `config.js`) unless you pass `-n`/`--new` to regenerate.
 
 ---
 

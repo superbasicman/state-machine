@@ -63,6 +63,7 @@ Environment Variables:
 Workflow Structure:
   workflows/<name>/
   ├── workflow.js        # Native JS workflow (async/await)
+  ├── config.js          # Model/API key configuration
   ├── package.json       # Sets "type": "module" for this workflow folder
   ├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
   ├── interactions/      # Human-in-the-loop files (auto-created)
@@ -185,8 +186,8 @@ function findConfigObjectRange(source) {
   return null;
 }
 
-function readRemotePathFromWorkflow(workflowFile) {
-  const source = fs.readFileSync(workflowFile, 'utf-8');
+function readRemotePathFromConfig(configFile) {
+  const source = fs.readFileSync(configFile, 'utf-8');
   const range = findConfigObjectRange(source);
   if (!range) return null;
   const configSource = source.slice(range.start, range.end + 1);
@@ -194,19 +195,19 @@ function readRemotePathFromWorkflow(workflowFile) {
   return match ? match[2] : null;
 }
 
-function writeRemotePathToWorkflow(workflowFile, remotePath) {
-  const source = fs.readFileSync(workflowFile, 'utf-8');
+function writeRemotePathToConfig(configFile, remotePath) {
+  const source = fs.readFileSync(configFile, 'utf-8');
   const range = findConfigObjectRange(source);
   const remoteLine = `remotePath: "${remotePath}"`;
 
   if (!range) {
     const hasConfigExport = /export\s+const\s+config\s*=/.test(source);
     if (hasConfigExport) {
-      throw new Error('Workflow config export is not an object literal; add remotePath manually.');
+      throw new Error('Config export is not an object literal; add remotePath manually.');
     }
     const trimmed = source.replace(/\s*$/, '');
     const appended = `${trimmed}\n\nexport const config = {\n  ${remoteLine}\n};\n`;
-    fs.writeFileSync(workflowFile, appended);
+    fs.writeFileSync(configFile, appended);
     return;
   }
 
@@ -247,15 +248,15 @@ function writeRemotePathToWorkflow(workflowFile, remotePath) {
     source.slice(0, range.start) +
     updatedConfigSource +
     source.slice(range.end + 1);
-  fs.writeFileSync(workflowFile, updatedSource);
+  fs.writeFileSync(configFile, updatedSource);
 }
 
-function ensureRemotePath(workflowFile, { forceNew = false } = {}) {
-  const existing = readRemotePathFromWorkflow(workflowFile);
+function ensureRemotePath(configFile, { forceNew = false } = {}) {
+  const existing = readRemotePathFromConfig(configFile);
   if (existing && !forceNew) return existing;
 
   const remotePath = generateSessionToken();
-  writeRemotePathToWorkflow(workflowFile, remotePath);
+  writeRemotePathToConfig(configFile, remotePath);
   return remotePath;
 }
 
@@ -362,6 +363,7 @@ async function runOrResume(
   }
 
   const workflowUrl = pathToFileURL(entry).href;
+  const configFile = path.join(workflowDir, 'config.js');
 
   let localServer = null;
   let remoteUrl = null;
@@ -383,7 +385,7 @@ async function runOrResume(
 
   // Enable remote follow mode if we have a URL
   if (remoteUrl) {
-    const sessionToken = ensureRemotePath(entry, { forceNew: forceNewRemotePath });
+    const sessionToken = ensureRemotePath(configFile, { forceNew: forceNewRemotePath });
     await runtime.enableRemote(remoteUrl, { sessionToken });
   }
 

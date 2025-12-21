@@ -33,6 +33,7 @@ your-project/
 └── workflows/
     └── my-workflow/
         ├── workflow.js       # Native JS workflow (async/await)
+        ├── config.js         # Model/API key configuration
         ├── package.json      # Sets "type": "module" for this workflow folder
         ├── scripts/          # Your scripts
         ├── agents/           # Your agents
