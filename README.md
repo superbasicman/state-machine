@@ -6,6 +6,7 @@ You write normal `async/await` code. The runtime handles:
 - **Auto-persisted** `memory` (saved to disk on mutation)
 - **Human-in-the-loop** blocking via `askHuman()` or agent-driven interactions
 - Local **JS agents** + **Markdown agents** (LLM-powered)
+- **Agent retries** with history logging for failures
 
 ---
 
@@ -101,8 +102,8 @@ export default async function() {
 
   console.log('Example agent memory.userInfo:', memory.userInfo || userInfo);
 
-  // Context is provided automatically
-  const { greeting } = await agent('yoda-greeter', { userLocation });
+  // Context is explicit: pass what the agent needs
+  const { greeting } = await agent('yoda-greeter', { userLocation, memory });
   console.log('Example agent greeting:', greeting);
 
   // Or you can provide context manually
@@ -137,7 +138,7 @@ If the process is interrupted, running `state-machine run <workflow-name>` again
 
 ## Core API
 
-### `agent(name, params?)`
+### `agent(name, params?, options?)`
 
 Runs `workflows/<name>/agents/<agent>.(js|mjs|cjs)` or `<agent>.md`.
 
@@ -145,6 +146,12 @@ Runs `workflows/<name>/agents/<agent>.(js|mjs|cjs)` or `<agent>.md`.
 const out = await agent('review', { file: 'src/app.js' });
 memory.lastReview = out;
 ```
+
+Options:
+- `retry` (number | false): default `2` (3 total attempts). Use `false` to disable retries.
+- `steering` (string | string[]): extra steering files to load from `workflows/<name>/steering/`.
+
+Context is explicit: only `params` are provided to agents unless you pass additional data.
 
 ### `memory`
 
@@ -203,9 +210,8 @@ import { llm } from 'agent-state-machine';
 
 export default async function handler(context) {
   // context includes:
-  // - persisted memory (spread into the object)
   // - params passed to agent(name, params)
-  // - context._steering (global steering prompt/config)
+  // - context._steering (global + optional additional steering content)
   // - context._config (models/apiKeys/workflowDir)
   return { ok: true };
 }
@@ -240,11 +246,13 @@ The runtime will block execution and wait for your response in the terminal.
 ### Markdown agents (`.md`)
 
 Markdown agents are LLM-backed prompt templates with optional frontmatter.
+Frontmatter can include `steering` to load additional files from `workflows/<name>/steering/`.
 
 ```md
 ---
 model: smart
 output: greeting
+steering: tone, product
 ---
 Generate a friendly greeting for {{name}}.
 ```
@@ -296,7 +304,7 @@ The runtime captures the fully-built prompt in `state/history.jsonl`, viewable i
 Native JS workflows persist to:
 
 - `workflows/<name>/state/current.json` — status, memory, pending interaction
-- `workflows/<name>/state/history.jsonl` — event log (newest entries first)
+- `workflows/<name>/state/history.jsonl` — event log (newest entries first, includes agent retry/failure entries)
 - `workflows/<name>/interactions/*.md` — human input files (when paused)
 
 ## License

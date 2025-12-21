@@ -8,11 +8,12 @@ Instructions for Claude Code (claude.ai/code) when editing this repository.
 Agent State Machine is a **native JavaScript workflow runner**.
 
 You write a workflow as normal `async/await` JavaScript, and the runtime provides:
-- `agent(name, params?)` for running specialized task handlers
+- `agent(name, params?, options?)` for running specialized task handlers
 - `memory` that **persists to disk** on mutation
 - Human-in-the-loop blocking through `askHuman()` and agent-driven interactions
 - Agents implemented as **JS modules** or **Markdown prompt templates**
 - LLM calls via local CLI tools or provider APIs
+- Agent retries with history logging on failure
 
 ---
 
@@ -120,6 +121,8 @@ Workflows run as standard Node.js processes.
 ## Agents
 
 Agents are loaded from `workflows/<name>/agents/`.
+Context is explicit: only the params you pass are included. Pass `memory` (or anything else) yourself when needed.
+`agent()` accepts an optional third argument with `retry` (number | false, default 2) and `steering` (string | string[]).
 
 ### JavaScript agents
 
@@ -132,9 +135,8 @@ import { llm } from 'agent-state-machine';
 
 export default async function (context) {
   // context contains:
-  // - persisted memory keys (spread into the object)
   // - params passed to agent(name, params)
-  // - context._steering.global (if enabled)
+  // - context._steering.global and optional additional steering content
   // - context._config (models, apiKeys, workflowDir)
   const resp = await llm(context, { model: 'fast', prompt: 'Say hello.' });
   return { text: resp.text };
@@ -151,6 +153,7 @@ model: fast
 output: greeting
 format: text
 includeContext: true
+steering: tone, product
 ---
 
 Write a greeting for {{name}}.
@@ -167,6 +170,7 @@ Supported frontmatter knobs (non-exhaustive, based on current implementation):
 - `output`: key to place the result under
 - `format`: `json` (attempt parse) or `interaction` (forces pause)
 - `includeContext`: `"false"` to omit extra context in the prompt build
+- `steering`: additional steering file(s) to load from `steering/` (comma list or array)
 - `interaction`: `"true"` or a string slug to request human input
 - `interactionKey`: where the human answer is stored in `memory`
 - `autoInteract`: `"false"` to disable auto-detection of interaction blocks in LLM output
@@ -207,7 +211,7 @@ Per workflow, persisted files live under `workflows/<name>/state/`:
   - `memory`: persisted workflow memory
   - `status`: `IDLE | RUNNING | FAILED | COMPLETED`
 - `history.jsonl`
-  - event log, newest entries prepended (contains full prompt traces)
+  - event log, newest entries prepended (contains full prompt traces and agent retry/failure events)
 
 ---
 
