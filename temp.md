@@ -87,19 +87,116 @@ A JS agent that executes the checks and returns structured results. Markdown age
 }
 ```
 
-### 3. `response-interpreter.md` - Maps Natural Language to Actions
+### 3. `schemas/interaction.schema.js` - Universal Interaction Schema
 
-When user responses don't match simple patterns (A/B/C), this agent interprets the intent.
+A shared schema for any user interaction (multiple choice, text input, confirmation). Used by `askHuman()`, agents, and UI rendering.
+
+**Schema Definition:**
+```js
+// schemas/interaction.schema.js
+export const InteractionSchema = {
+  // Required
+  type: 'choice' | 'text' | 'confirm',
+  slug: 'string',           // Unique identifier for this interaction
+  prompt: 'string',         // The question/message to display
+
+  // For type: 'choice'
+  options: [
+    {
+      key: 'string',        // Machine-readable key (e.g., 'auto', 'manual')
+      label: 'string',      // Display label (e.g., 'A: Run automatically')
+      description: 'string' // Optional longer description
+    }
+  ],
+  allowCustom: 'boolean',   // Allow free-text "Other" option (default: true)
+  multiSelect: 'boolean',   // Allow multiple selections (default: false)
+
+  // For type: 'text'
+  placeholder: 'string',
+  validation: {
+    minLength: 'number',
+    maxLength: 'number',
+    pattern: 'string'       // Regex pattern
+  },
+
+  // For type: 'confirm'
+  confirmLabel: 'string',   // Default: 'Confirm'
+  cancelLabel: 'string',    // Default: 'Cancel'
+
+  // Common
+  default: 'string',        // Default value/key
+  context: 'object'         // Additional context for interpreter/UI
+};
+```
+
+**Example Interactions:**
+
+```js
+// Multiple choice
+{
+  type: 'choice',
+  slug: 'sanity-check-action',
+  prompt: 'How would you like to verify this task?',
+  options: [
+    { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
+    { key: 'auto', label: 'Run automatically', description: 'Agent executes checks and reports results' },
+    { key: 'skip', label: 'Skip verification', description: 'Approve without running checks' }
+  ],
+  allowCustom: true,
+  default: 'auto'
+}
+
+// Free text
+{
+  type: 'text',
+  slug: 'project-description',
+  prompt: 'Describe the project you want to build',
+  placeholder: 'A web app that...',
+  validation: { minLength: 20 }
+}
+
+// Confirmation
+{
+  type: 'confirm',
+  slug: 'roadmap-approval',
+  prompt: 'Approve this roadmap?',
+  confirmLabel: 'Approve',
+  cancelLabel: 'Request Changes',
+  context: { documentPath: 'state/roadmap.md' }
+}
+```
+
+**Response Format:**
+```js
+// What askHuman/agents return after user responds
+{
+  slug: 'sanity-check-action',
+  selectedKey: 'auto',           // For choice type
+  selectedKeys: ['a', 'b'],      // For multiSelect
+  text: 'user input here',       // For text type or custom option
+  confirmed: true,               // For confirm type
+  raw: 'original user input',    // Always included
+  interpreted: true              // True if response-interpreter was used
+}
+```
+
+### 4. `response-interpreter.md` - Maps Natural Language to Actions
+
+When user responses don't match simple patterns (A/B/C), this agent interprets the intent using the interaction schema.
 
 **Input:**
 ```js
 {
   userResponse: "lets run the sanity checks automatically please",
-  options: [
-    { key: "manual", description: "User will run checks manually" },
-    { key: "auto", description: "Run checks automatically" },
-    { key: "skip", description: "Skip sanity checks entirely" }
-  ]
+  interaction: {
+    type: 'choice',
+    slug: 'sanity-check-action',
+    options: [
+      { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
+      { key: 'auto', label: 'Run automatically', description: 'Agent executes checks and reports results' },
+      { key: 'skip', label: 'Skip verification', description: 'Approve without running checks' }
+    ]
+  }
 }
 ```
 
@@ -108,15 +205,73 @@ When user responses don't match simple patterns (A/B/C), this agent interprets t
 {
   "selectedKey": "auto",
   "confidence": "high",
-  "reasoning": "User explicitly requested automatic execution"
+  "reasoning": "User explicitly requested automatic execution",
+  "isCustom": false
+}
+```
+
+If user provides a response that doesn't match any option (and `allowCustom: true`):
+```json
+{
+  "selectedKey": null,
+  "confidence": "high",
+  "reasoning": "User provided custom feedback about specific issues",
+  "isCustom": true,
+  "customText": "The tests are failing because the database isn't running"
 }
 ```
 
 This avoids brittle substring matching like `.includes('auto')` which would incorrectly match "don't do auto".
 
-### 4. No separate mitigator needed
+### 5. No separate mitigator needed
 
 On failure, we already have the loop-back mechanism in workflow.js. Just pass the failure results as feedback to code-writer. This keeps things simple.
+
+---
+
+## Usage Pattern with Schema
+
+The schema + helpers clean up workflow code significantly:
+
+**Before (inline strings):**
+```js
+const choice = await askHuman(
+  `Options:\n- A: Run manually\n- B: Run automatically\n- C: Skip\n\nYour choice:`,
+  { slug: 'sanity-choice' }
+);
+const choiceLower = choice.trim().toLowerCase();
+if (choiceLower.startsWith('a')) { /* ... */ }
+// fragile, duplicated logic everywhere
+```
+
+**After (schema-based):**
+```js
+import { createInteraction, parseResponse, formatPrompt } from './scripts/interaction-helpers.js';
+
+const interaction = createInteraction('choice', 'sanity-check-action', {
+  prompt: 'How would you like to verify this task?',
+  options: [
+    { key: 'manual', label: 'Run checks manually' },
+    { key: 'auto', label: 'Run automatically' },
+    { key: 'skip', label: 'Skip verification' }
+  ]
+});
+
+const raw = await askHuman(formatPrompt(interaction), { slug: interaction.slug });
+const response = await parseResponse(interaction, raw);
+
+if (response.selectedKey === 'auto') { /* ... */ }
+else if (response.isCustom) {
+  // User said something like "the database isn't running"
+  // Use response.customText as feedback
+}
+```
+
+The `parseResponse` function handles:
+1. Simple A/B/C matching (fast path)
+2. Falls back to `response-interpreter` agent if no match
+3. Detects custom responses when `allowCustom: true`
+4. Returns consistent response format
 
 ---
 
@@ -259,26 +414,37 @@ export const TASK_STAGES = {
 
 ## Implementation Checklist
 
-1. [ ] Create `agents/sanity-checker.md`
+1. [ ] Create `schemas/interaction.schema.js`
+   - Define InteractionSchema type
+   - Export schema validation helpers
+   - Export response format types
+
+2. [ ] Create `scripts/interaction-helpers.js`
+   - `createInteraction(type, slug, options)` - factory for interactions
+   - `parseResponse(interaction, rawResponse)` - handles simple matching + interpreter fallback
+   - `formatPrompt(interaction)` - renders interaction as terminal text
+
+3. [ ] Create `agents/sanity-checker.md`
    - Model: fast (just needs to analyze code and generate commands)
    - Format: json
    - Takes task + implementation, outputs executable checks
 
-2. [ ] Create `agents/sanity-runner.js`
+4. [ ] Create `agents/sanity-runner.js`
    - JS agent (needs to spawn processes)
    - Executes checks sequentially with timeout protection
    - Returns structured pass/fail results
 
-3. [ ] Create `agents/response-interpreter.md`
+5. [ ] Create `agents/response-interpreter.md`
    - Model: fast
    - Format: json
-   - Takes userResponse + options array, returns selectedKey
-   - Used when simple A/B/C matching fails
+   - Takes userResponse + interaction schema, returns structured response
+   - Handles custom/freeform responses when allowCustom is true
 
-4. [ ] Update `scripts/workflow-helpers.js`
+6. [ ] Update `scripts/workflow-helpers.js`
    - Add `SANITY_CHECK` stage
 
-5. [ ] Update `workflow.js`
+7. [ ] Update `workflow.js`
+   - Refactor askHuman calls to use interaction schema
    - Insert sanity check step between SECURITY_POST and AWAITING_APPROVAL
    - Add user choice flow with interpreter fallback
    - Wire up failure loop-back
@@ -292,3 +458,9 @@ export const TASK_STAGES = {
 - **Why offer manual option?** Some checks may need human judgment (visual UI, complex integration scenarios). User should always have control.
 - **Timeout protection** - sanity-runner should timeout individual checks (e.g., 30s) to prevent hanging on broken services.
 - **Two-tier response matching** - Simple A/B/C matching is fast and free. The interpreter agent is only called when needed, avoiding unnecessary LLM calls while still handling natural language like "yeah run them automatically" or "skip it, looks good".
+- **Why a universal schema?**
+  - **Consistency** - All interactions follow the same pattern, reducing cognitive load
+  - **UI-ready** - The schema can render to terminal, web UI, or mobile with different formatters
+  - **Testable** - Interactions are data, making them easy to unit test
+  - **Reusable** - Same schema powers `askHuman()`, agent-requested interactions, and the interpreter
+  - **Self-documenting** - Looking at an interaction schema tells you exactly what's being asked

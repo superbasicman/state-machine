@@ -344,10 +344,10 @@ async function handleSubmitPost(req, res, token) {
 /**
  * Serve session UI
  */
-const MASTER_TEMPLATE_PATH = path.join(__dirname, 'ui', 'index.html');
+const MASTER_TEMPLATE_PATH = path.join(__dirname, 'public', 'remote', 'index.html');
 
 /**
- * Get session HTML by reading the master template from lib/ui/index.html
+ * Get session HTML by reading the master template from public/remote/index.html
  */
 function getSessionHTML(token, workflowName) {
   try {
@@ -364,7 +364,8 @@ function getSessionHTML(token, workflowName) {
         <body style="font-family: system-ui; max-width: 600px; margin: 100px auto; text-align: center;">
           <h1>Error loading UI template</h1>
           <p>${err.message}</p>
-          <p>Make sure <code>lib/ui/index.html</code> exists.</p>
+          <p>Make sure <code>public/remote/index.html</code> exists.</p>
+          <p>Build the UI first: <code>cd vercel-server/ui && npm install && npm run build</code></p>
         </body>
       </html>
     `;
@@ -492,6 +493,10 @@ async function handleRequest(req, res) {
 
   if (pathname === '/index.html') {
     return serveStatic(res, 'index.html');
+  }
+
+  if (pathname.startsWith('/remote/')) {
+    return serveStatic(res, pathname.slice(1));
   }
 
   // 404
