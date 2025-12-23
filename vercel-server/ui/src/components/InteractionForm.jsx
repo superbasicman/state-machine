@@ -26,25 +26,30 @@ export default function InteractionForm({ interaction, onSubmit, disabled }) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-start md:justify-center text-center space-y-12 px-6 pt-24 pb-24 md:pt-0 md:pb-0 overflow-y-auto custom-scroll">
-      <div className="space-y-4 shrink-0">
-        <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
-          <Bot className="w-8 h-8" />
+    <form onSubmit={handleSubmit} className="w-full h-full flex flex-col items-stretch overflow-hidden">
+      <div className="flex-1 overflow-y-auto custom-scroll px-6 py-12 md:py-24 space-y-12 flex flex-col items-center">
+        <div className="space-y-4 shrink-0">
+          <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
+            <Bot className="w-8 h-8" />
+          </div>
+          <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Action required.</h3>
         </div>
-        <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4">Action required.</h3>
+
+        <div className="w-full max-w-2xl space-y-8 pb-12">
+          <div className="text-2xl font-semibold tracking-tight text-fg text-center italic">
+            {interaction.question || "Provide your response."}
+          </div>
+          <textarea
+            value={response}
+            onChange={(event) => setResponse(event.target.value)}
+            disabled={disabled || submitting}
+            placeholder="Your response..."
+            className="w-full h-64 p-8 rounded-[32px] bg-black/[0.03] dark:bg-white/[0.03] border-none focus:ring-4 focus:ring-accent/10 focus:outline-none text-2xl font-medium transition-all text-center placeholder:opacity-20"
+          />
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="w-full max-w-2xl space-y-8 pb-12">
-        <div className="text-2xl font-semibold tracking-tight text-fg text-center">
-          {interaction.question || "Provide your response."}
-        </div>
-        <textarea
-          value={response}
-          onChange={(event) => setResponse(event.target.value)}
-          disabled={disabled || submitting}
-          placeholder="Your response..."
-          className="w-full h-48 p-8 rounded-[32px] bg-black/[0.03] dark:bg-white/[0.03] border-none focus:ring-4 focus:ring-accent/10 focus:outline-none text-2xl font-medium transition-all text-center placeholder:opacity-20"
-        />
+      <div className="p-4 flex justify-center bg-gradient-to-t from-bg via-bg to-transparent backdrop-blur-lg shrink-0 border-t border-white/5">
         <button
           type="submit"
           disabled={disabled || submitting || !response.trim()}
@@ -52,7 +57,7 @@ export default function InteractionForm({ interaction, onSubmit, disabled }) {
         >
           {submitting ? "Sending..." : "Submit Response"}
         </button>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 }
