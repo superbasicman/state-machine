@@ -12,6 +12,7 @@ export default function App() {
   const [workflowName, setWorkflowName] = useState("...");
   const [theme, setTheme] = useState("light");
   const [pendingInteraction, setPendingInteraction] = useState(null);
+  const [hasNew, setHasNew] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -55,10 +56,21 @@ export default function App() {
   const prevLen = useRef(0);
   useEffect(() => {
     if (history.length > prevLen.current) {
-      if (pageIndex === prevLen.current - 1 || prevLen.current === 0) setPageIndex(history.length - 1);
+      if (prevLen.current === 0 && history.length > 0) {
+        setPageIndex(history.length - 1);
+        setHasNew(false);
+      } else if (pageIndex < history.length - 1) {
+        setHasNew(true);
+      }
     }
     prevLen.current = history.length;
   }, [history.length, pageIndex]);
+
+  useEffect(() => {
+    if (pageIndex === history.length - 1) {
+      setHasNew(false);
+    }
+  }, [pageIndex, history.length]);
 
   useEffect(() => {
     fetchData();
@@ -91,7 +103,7 @@ export default function App() {
   const isRequest = pendingInteraction && currentItem && currentItem.slug === pendingInteraction.slug;
 
   return (
-    <div className="w-full h-screen flex flex-col relative overflow-hidden bg-bg">
+    <div className="w-full h-[100dvh] flex flex-col relative overflow-hidden bg-bg">
       <Header workflowName={workflowName} status={status} theme={theme} toggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))} />
 
       <main className="main-stage overflow-hidden">
@@ -134,6 +146,8 @@ export default function App() {
         onNext={next}
         onPrev={prev}
         onJump={setPageIndex}
+        hasNew={hasNew}
+        onJumpToLatest={() => setPageIndex(history.length - 1)}
       />
 
       <div className="nav-hitbox left" onClick={prev}></div>

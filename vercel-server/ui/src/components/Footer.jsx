@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "./Icon.jsx";
 
-export default function Footer({ page, total, onNext, onPrev, onJump }) {
+export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest }) {
   const [inputValue, setInputValue] = useState(page + 1);
   useEffect(() => setInputValue(page + 1), [page]);
 
@@ -45,6 +45,15 @@ export default function Footer({ page, total, onNext, onPrev, onJump }) {
         >
           <Icon name="chevronRight" className="w-5 h-5" />
         </button>
+
+        {hasNew ? (
+          <button
+            onClick={onJumpToLatest}
+            className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-accent text-white shadow-[0_10px_30px_rgba(0,122,255,0.25)] hover:scale-[1.02] transition-transform"
+          >
+            New
+          </button>
+        ) : null}
       </div>
     </footer>
   );

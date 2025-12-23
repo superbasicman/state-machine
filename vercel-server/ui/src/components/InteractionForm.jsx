@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "./Icon.jsx";
 
 export default function InteractionForm({ interaction, onSubmit, disabled }) {
-  const [response, setResponse] = useState(interaction.question || "");
+  const [response, setResponse] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const lastSlugRef = useRef(interaction.slug);
+
   useEffect(() => {
-    setResponse(interaction.question || "");
-  }, [interaction]);
+    if (lastSlugRef.current !== interaction.slug) {
+      setResponse("");
+      lastSlugRef.current = interaction.slug;
+    }
+  }, [interaction.slug]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -30,6 +35,9 @@ export default function InteractionForm({ interaction, onSubmit, disabled }) {
       </div>
 
       <form onSubmit={handleSubmit} className="w-full max-w-2xl space-y-8 pb-12">
+        <div className="text-2xl font-semibold tracking-tight text-fg text-center">
+          {interaction.question || "Provide your response."}
+        </div>
         <textarea
           value={response}
           onChange={(event) => setResponse(event.target.value)}
