@@ -57,13 +57,13 @@ export default async function handler(req, res) {
 
     // Track current position for polling new events
     let lastEventIndex = await getEventsLength(token);
+    let pollCount = 0;
 
     const pollInterval = setInterval(async () => {
       try {
-        // Refresh session TTL
-        await refreshSession(token);
+        pollCount++;
 
-        // Check for new events
+        // Check for new events (most important, do this every poll)
         const newLength = await getEventsLength(token);
 
         if (newLength > lastEventIndex) {
@@ -82,18 +82,23 @@ export default async function handler(req, res) {
           lastEventIndex = newLength;
         }
 
-        // Check CLI status
-        const updatedSession = await getSession(token);
-        if (updatedSession && updatedSession.cliConnected !== session.cliConnected) {
-          session.cliConnected = updatedSession.cliConnected;
-          res.write(`data: ${JSON.stringify({
-            type: updatedSession.cliConnected ? 'cli_reconnected' : 'cli_disconnected',
-          })}\n\n`);
+        // Only check CLI status and refresh session every 5th poll (~15 seconds)
+        // This reduces Redis calls significantly
+        if (pollCount % 5 === 0) {
+          await refreshSession(token);
+
+          const updatedSession = await getSession(token);
+          if (updatedSession && updatedSession.cliConnected !== session.cliConnected) {
+            session.cliConnected = updatedSession.cliConnected;
+            res.write(`data: ${JSON.stringify({
+              type: updatedSession.cliConnected ? 'cli_reconnected' : 'cli_disconnected',
+            })}\n\n`);
+          }
         }
       } catch (err) {
         console.error('Error polling events:', err);
       }
-    }, 1000); // Poll every 1 second for faster updates
+    }, 3000); // Poll every 3 seconds (was 1 second) - 3x reduction
 
     // Clean up on client disconnect
     req.on('close', () => {

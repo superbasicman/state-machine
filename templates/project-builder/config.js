@@ -8,6 +8,5 @@ export const config = {
     gemini: process.env.GEMINI_API_KEY,
     anthropic: process.env.ANTHROPIC_API_KEY,
     openai: process.env.OPENAI_API_KEY,
-  },
-  remotePath: "TczrLmUecnqZPpPhBTrvU374CGlfzDfINrr0eN0nMgQ",
+  }
 };

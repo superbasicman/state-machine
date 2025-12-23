@@ -44,14 +44,16 @@ export default async function handler(req, res) {
  */
 async function handlePost(req, res) {
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-  const { type, sessionToken } = body;
+  const { sessionToken } = body;
+  // Support both _action (new) and type (legacy) for message routing
+  const action = body._action || body.type;
 
   if (!sessionToken) {
     return res.status(400).json({ error: 'Missing sessionToken' });
   }
 
   try {
-    switch (type) {
+    switch (action) {
       case 'session_init': {
         const { workflowName, history } = body;
 
@@ -89,9 +91,9 @@ async function handlePost(req, res) {
           ...eventData,
         };
 
-        // Remove sessionToken and type from event data
+        // Remove routing fields, preserve type (interaction type like 'choice')
         delete historyEvent.sessionToken;
-        delete historyEvent.type;
+        delete historyEvent._action;
 
         // Add to events list (single source of truth)
         await addEvent(sessionToken, historyEvent);
@@ -125,7 +127,7 @@ async function handlePost(req, res) {
       }
 
       default:
-        return res.status(400).json({ error: `Unknown message type: ${type}` });
+        return res.status(400).json({ error: `Unknown action: ${action}` });
     }
   } catch (err) {
     console.error('Error handling CLI message:', err);
@@ -135,6 +137,7 @@ async function handlePost(req, res) {
 
 /**
  * Handle GET requests - long-poll for interaction responses
+ * Uses Redis BLPOP for efficient blocking wait instead of polling loop
  */
 async function handleGet(req, res) {
   const { token, timeout = '30000' } = req.query;
@@ -148,29 +151,23 @@ async function handleGet(req, res) {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  const timeoutMs = Math.min(parseInt(timeout, 10), 55000); // Max 55s for Vercel
+  // Max 50s for Vercel (leave buffer for response)
+  const timeoutSec = Math.min(Math.floor(parseInt(timeout, 10) / 1000), 50);
   const channel = KEYS.interactions(token);
-
-  // Check for pending interactions using a list
   const pendingKey = `${channel}:pending`;
 
   try {
-    // Try to get a pending interaction
-    const startTime = Date.now();
+    // Use BLPOP for efficient blocking wait - only 1 Redis call!
+    // Returns [key, value] or null on timeout
+    const result = await redis.blpop(pendingKey, timeoutSec);
 
-    while (Date.now() - startTime < timeoutMs) {
-      const pending = await redis.lpop(pendingKey);
-
-      if (pending) {
-        const data = typeof pending === 'object' ? pending : JSON.parse(pending);
-        return res.status(200).json({
-          type: 'interaction_response',
-          ...data,
-        });
-      }
-
-      // Wait before checking again
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (result) {
+      const [, value] = result;
+      const data = typeof value === 'object' ? value : JSON.parse(value);
+      return res.status(200).json({
+        type: 'interaction_response',
+        ...data,
+      });
     }
 
     // Timeout - no interaction received
