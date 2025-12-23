@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import Icon from "./Icon.jsx";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest }) {
   const [inputValue, setInputValue] = useState(page + 1);
@@ -22,7 +22,7 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
           disabled={page === 0}
           className="p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
         >
-          <Icon name="chevronLeft" className="w-5 h-5" />
+          <ChevronLeft className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-2 text-xs font-mono font-bold tracking-widest opacity-60">
@@ -43,7 +43,7 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
           disabled={page === total - 1}
           className="p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
         >
-          <Icon name="chevronRight" className="w-5 h-5" />
+          <ChevronRight className="w-5 h-5" />
         </button>
 
         {hasNew ? (

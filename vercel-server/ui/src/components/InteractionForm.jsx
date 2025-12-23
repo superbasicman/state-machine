@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import Icon from "./Icon.jsx";
+import { Bot } from "lucide-react";
 
 export default function InteractionForm({ interaction, onSubmit, disabled }) {
   const [response, setResponse] = useState("");
@@ -26,10 +26,10 @@ export default function InteractionForm({ interaction, onSubmit, disabled }) {
   };
 
   return (
-    <div className="w-full h-full flex flex-col items-center justify-center text-center space-y-12 px-6 overflow-y-auto custom-scroll">
+    <div className="w-full h-full flex flex-col items-center justify-start md:justify-center text-center space-y-12 px-6 pt-24 pb-24 md:pt-0 md:pb-0 overflow-y-auto custom-scroll">
       <div className="space-y-4 shrink-0">
         <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
-          <Icon name="bot" className="w-8 h-8" />
+          <Bot className="w-8 h-8" />
         </div>
         <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4">Action required.</h3>
       </div>

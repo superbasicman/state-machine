@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Icon from "./Icon.jsx";
+import { Check, Copy } from "lucide-react";
 
 export default function CopyButton({ text }) {
   const [copied, setCopied] = useState(false);
@@ -14,7 +14,7 @@ export default function CopyButton({ text }) {
 
   return (
     <button onClick={handleCopy} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-subtle transition-colors">
-      <Icon name={copied ? "check" : "copy"} className="w-4 h-4" />
+      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
     </button>
   );
 }
