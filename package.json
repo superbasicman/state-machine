@@ -1,6 +1,6 @@
 {
   "name": "agent-state-machine",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "type": "module",
   "description": "A workflow orchestrator for running agents and scripts in sequence with state management",
   "main": "lib/index.js",
