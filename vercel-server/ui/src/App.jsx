@@ -87,6 +87,35 @@ export default function App() {
 
   const next = () => setPageIndex((prev) => Math.min(history.length - 1, prev + 1));
   const prev = () => setPageIndex((prev) => Math.max(0, prev - 1));
+  const touchStart = useRef(null);
+  const ignoreTouch = useRef(false);
+
+  const handleTouchStart = (event) => {
+    const target = event.target;
+    const isInput = target.tagName === "TEXTAREA" || (target.tagName === "INPUT" && target.type === "number");
+    if (isInput && target.className !== "jumper-input") {
+      ignoreTouch.current = true;
+      return;
+    }
+    ignoreTouch.current = false;
+    const touch = event.touches[0];
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (event) => {
+    if (ignoreTouch.current || !touchStart.current) return;
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - touchStart.current.x;
+    const dy = touch.clientY - touchStart.current.y;
+    const absX = Math.abs(dx);
+    const absY = Math.abs(dy);
+    const swipeThreshold = 50;
+    if (absX > swipeThreshold && absX > absY + 10) {
+      if (dx > 0) prev();
+      if (dx < 0) next();
+    }
+    touchStart.current = null;
+  };
 
   useEffect(() => {
     const handler = (event) => {
@@ -113,6 +142,9 @@ export default function App() {
             drag="x"
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.2}
+            style={{ touchAction: "pan-y" }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             onDragEnd={(e, { offset, velocity }) => {
               const swipeThreshold = 50;
               if (offset.x > swipeThreshold || velocity.x > 500) {
