@@ -137,7 +137,7 @@ async function handlePost(req, res) {
 
 /**
  * Handle GET requests - long-poll for interaction responses
- * Uses Redis BLPOP for efficient blocking wait instead of polling loop
+ * Uses efficient polling with 5-second intervals (Upstash doesn't support BLPOP)
  */
 async function handleGet(req, res) {
   const { token, timeout = '30000' } = req.query;
@@ -152,22 +152,27 @@ async function handleGet(req, res) {
   }
 
   // Max 50s for Vercel (leave buffer for response)
-  const timeoutSec = Math.min(Math.floor(parseInt(timeout, 10) / 1000), 50);
+  const timeoutMs = Math.min(parseInt(timeout, 10), 50000);
   const channel = KEYS.interactions(token);
   const pendingKey = `${channel}:pending`;
 
   try {
-    // Use BLPOP for efficient blocking wait - only 1 Redis call!
-    // Returns [key, value] or null on timeout
-    const result = await redis.blpop(pendingKey, timeoutSec);
+    const startTime = Date.now();
 
-    if (result) {
-      const [, value] = result;
-      const data = typeof value === 'object' ? value : JSON.parse(value);
-      return res.status(200).json({
-        type: 'interaction_response',
-        ...data,
-      });
+    // Poll every 5 seconds (10 calls per 50s timeout vs 50 calls before)
+    while (Date.now() - startTime < timeoutMs) {
+      const pending = await redis.lpop(pendingKey);
+
+      if (pending) {
+        const data = typeof pending === 'object' ? pending : JSON.parse(pending);
+        return res.status(200).json({
+          type: 'interaction_response',
+          ...data,
+        });
+      }
+
+      // Wait 5 seconds before checking again (was 1 second)
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
     // Timeout - no interaction received
