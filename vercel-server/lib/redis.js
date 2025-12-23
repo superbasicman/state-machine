@@ -106,7 +106,8 @@ export async function setEvents(token, events) {
 
   // Add all events if any (they're already in newest-first order from CLI)
   if (events && events.length > 0) {
-    const eventStrings = events.map((e) => JSON.stringify(e));
+    // LPUSH inserts values left-to-right, so reverse to keep newest at the head.
+    const eventStrings = events.slice().reverse().map((e) => JSON.stringify(e));
     await redis.lpush(key, ...eventStrings);
     await redis.expire(key, SESSION_TTL);
   }
