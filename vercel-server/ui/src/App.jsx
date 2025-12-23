@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import ContentCard from "./components/ContentCard.jsx";
+import EventsLog from "./components/EventsLog.jsx";
 import Footer from "./components/Footer.jsx";
 import Header from "./components/Header.jsx";
 import InteractionForm from "./components/InteractionForm.jsx";
@@ -11,18 +12,25 @@ export default function App() {
   const [status, setStatus] = useState("connecting");
   const [workflowName, setWorkflowName] = useState("...");
   const [theme, setTheme] = useState("light");
+  const [viewMode, setViewMode] = useState("present");
   const [pendingInteraction, setPendingInteraction] = useState(null);
   const [hasNew, setHasNew] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(saved);
+    const savedTheme = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    setTheme(savedTheme);
+    const savedView = localStorage.getItem("rf_view") || "present";
+    setViewMode(savedView);
   }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("rf_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("rf_view", viewMode);
+  }, [viewMode]);
 
   const token = window.SESSION_TOKEN === "{{" + "SESSION_TOKEN" + "}}" ? null : window.SESSION_TOKEN;
   const historyUrl = token ? `/api/history/${token}` : "/api/history";
@@ -36,7 +44,9 @@ export default function App() {
       if (data.entries) {
         const chronological = [...data.entries].reverse();
         setHistory((prev) => {
-          if (prev.length === 0 && chronological.length > 0) setPageIndex(chronological.length - 1);
+          if (prev.length === 0 && chronological.length > 0) {
+            setPageIndex(chronological.length - 1);
+          }
           return chronological;
         });
         const last = chronological[chronological.length - 1];
@@ -129,13 +139,31 @@ export default function App() {
   }, [history.length]);
 
   const currentItem = history[pageIndex];
-  const isRequest = pendingInteraction && currentItem && currentItem.slug === pendingInteraction.slug;
+  const isRequestEvent = currentItem && (currentItem.event === "INTERACTION_REQUESTED" || currentItem.event === "PROMPT_REQUESTED");
+  const isRequest = pendingInteraction && isRequestEvent && currentItem.slug === pendingInteraction.slug;
 
   return (
     <div className="w-full h-[100dvh] flex flex-col relative overflow-hidden bg-bg">
-      <Header workflowName={workflowName} status={status} theme={theme} toggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))} />
+      <Header
+        workflowName={workflowName}
+        status={status}
+        theme={theme}
+        toggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        history={history}
+      />
 
       <main className="main-stage overflow-hidden">
+        {viewMode === "log" ? (
+          <EventsLog
+            history={history}
+            onJump={(idx) => {
+              setPageIndex(idx);
+              setViewMode("present");
+            }}
+          />
+        ) : (
         <AnimatePresence mode="wait">
           <motion.div
             key={pageIndex}
@@ -164,7 +192,16 @@ export default function App() {
                 <InteractionForm
                   interaction={pendingInteraction}
                   onSubmit={async (slug, targetKey, response) => {
-                    setHistory((prev) => [...prev, { timestamp: new Date().toISOString(), event: "INTERACTION_SUBMITTED", answer: response }]);
+                    const responsePreview = typeof response === "string" ? response : JSON.stringify(response);
+                    setHistory((prev) => [
+                      ...prev,
+                      {
+                        timestamp: new Date().toISOString(),
+                        event: "INTERACTION_SUBMITTED",
+                        answer: responsePreview,
+                        response
+                      }
+                    ]);
                     setPageIndex((prev) => prev + 1);
                     await fetch(submitUrl, {
                       method: "POST",
@@ -181,6 +218,7 @@ export default function App() {
             )}
           </motion.div>
         </AnimatePresence>
+        )}
       </main>
 
       <Footer
@@ -191,6 +229,7 @@ export default function App() {
         onJump={setPageIndex}
         hasNew={hasNew}
         onJumpToLatest={() => setPageIndex(history.length - 1)}
+        className={viewMode === "log" ? "opacity-0 pointer-events-none" : "opacity-100"}
       />
     </div>
   );

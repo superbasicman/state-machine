@@ -22,6 +22,11 @@ import {
   getTaskData,
   setTaskData
 } from './scripts/workflow-helpers.js';
+import {
+  createInteraction,
+  parseResponse,
+  formatInteractionPrompt as formatPrompt
+} from './scripts/interaction-helpers.js';
 
 // Derive workflow directory dynamically
 const __filename = fileURLToPath(import.meta.url);
@@ -42,11 +47,17 @@ export default async function () {
   console.log('=== PHASE 1: PROJECT INTAKE ===\n');
 
   if (!memory.projectDescription) {
-    const description = await askHuman(
-      'Describe the project you want to build. Include any initial requirements, goals, or constraints you have in mind.',
-      { slug: 'project-description' }
-    );
-    memory.projectDescription = description;
+    const descriptionInteraction = createInteraction('text', 'project-description', {
+      prompt: 'Describe the project you want to build. Include any initial requirements, goals, or constraints you have in mind.',
+      placeholder: 'A web app that...',
+      validation: { minLength: 20 }
+    });
+    const descriptionRaw = await askHuman(formatPrompt(descriptionInteraction), {
+      slug: descriptionInteraction.slug,
+      interaction: descriptionInteraction
+    });
+    const descriptionParsed = await parseResponse(descriptionInteraction, descriptionRaw);
+    memory.projectDescription = descriptionParsed.text || descriptionParsed.raw || descriptionRaw;
   }
 
   console.log('Project description captured. Starting clarification process...\n');
@@ -128,16 +139,27 @@ export default async function () {
     // Roadmap approval loop
     let approved = false;
     while (!approved) {
-      const reviewResponse = await askHuman(
-        `Please review the roadmap in state/roadmap.md\n\nOptions:\n- A: Approve roadmap as-is\n- B: Request changes (describe what to change)\n\nYour choice:`,
-        { slug: 'roadmap-review' }
-      );
+      const roadmapInteraction = createInteraction('choice', 'roadmap-review', {
+        prompt: 'Please review the roadmap in state/roadmap.md.\nHow would you like to proceed?',
+        options: [
+          { key: 'approve', label: 'Approve roadmap as-is' },
+          { key: 'changes', label: 'Request changes', description: 'Describe what to change' }
+        ],
+        allowCustom: true
+      });
 
-      if (isApproval(reviewResponse)) {
+      const reviewRaw = await askHuman(formatPrompt(roadmapInteraction), {
+        slug: roadmapInteraction.slug,
+        interaction: roadmapInteraction
+      });
+      const reviewResponse = await parseResponse(roadmapInteraction, reviewRaw);
+
+      if (reviewResponse.selectedKey === 'approve' || isApproval(reviewResponse.raw || reviewRaw)) {
         approved = true;
         memory.roadmapApproved = true;
         console.log('Roadmap approved!\n');
       } else {
+        const feedback = reviewResponse.customText || reviewResponse.text || reviewResponse.raw || reviewRaw;
         // Regenerate roadmap with feedback
         const updatedRoadmap = await agent('roadmap-generator', {
           projectDescription: memory.projectDescription,
@@ -145,7 +167,7 @@ export default async function () {
           requirements: memory.requirements,
           assumptions: memory.assumptions,
           security: memory.security,
-          feedback: reviewResponse
+          feedback
         });
         memory.roadmap = updatedRoadmap;
         writeMarkdownFile(STATE_DIR, 'roadmap.md', renderRoadmapMarkdown(memory.roadmap));
@@ -192,23 +214,34 @@ export default async function () {
       // Task list approval loop
       let tasksApproved = false;
       while (!tasksApproved) {
-        const taskReview = await askHuman(
-          `Please review the task list for Phase ${i + 1} in state/phase-${i + 1}-tasks.md\n\nOptions:\n- A: Approve task list\n- B: Request changes (describe what to change)\n\nYour choice:`,
-          { slug: `phase-${i + 1}-task-review` }
-        );
+        const taskReviewInteraction = createInteraction('choice', `phase-${i + 1}-task-review`, {
+          prompt: `Please review the task list for Phase ${i + 1} in state/phase-${i + 1}-tasks.md.\nHow would you like to proceed?`,
+          options: [
+            { key: 'approve', label: 'Approve task list' },
+            { key: 'changes', label: 'Request changes', description: 'Describe what to change' }
+          ],
+          allowCustom: true
+        });
 
-        if (isApproval(taskReview)) {
+        const taskReviewRaw = await askHuman(formatPrompt(taskReviewInteraction), {
+          slug: taskReviewInteraction.slug,
+          interaction: taskReviewInteraction
+        });
+        const taskReview = await parseResponse(taskReviewInteraction, taskReviewRaw);
+
+        if (taskReview.selectedKey === 'approve' || isApproval(taskReview.raw || taskReviewRaw)) {
           tasksApproved = true;
           memory[tasksApprovedKey] = true;
           console.log(`Phase ${i + 1} task list approved!\n`);
         } else {
+          const feedback = taskReview.customText || taskReview.text || taskReview.raw || taskReviewRaw;
           const updatedTasks = await agent('task-planner', {
             projectDescription: memory.projectDescription,
             scope: memory.scope,
             requirements: memory.requirements,
             phase: phase,
             phaseIndex: i + 1,
-            feedback: taskReview
+            feedback
           });
           memory[tasksKey] = updatedTasks;
           writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, memory[tasksKey]?.tasks || memory[tasksKey]));
@@ -334,39 +367,147 @@ export default async function () {
             });
             setTaskData(i, taskId, 'security_post', securityPostReview);
           }
-          setTaskStage(i, taskId, TASK_STAGES.AWAITING_APPROVAL);
-          stage = TASK_STAGES.AWAITING_APPROVAL;
+          setTaskStage(i, taskId, TASK_STAGES.SANITY_CHECK);
+          stage = TASK_STAGES.SANITY_CHECK;
         }
 
-        // 6. Sanity check with user
-        if (stage === TASK_STAGES.AWAITING_APPROVAL) {
-          const sanityCheck = await askHuman(
-            `Task ${t + 1} (${task.title}) complete.\n\nDefinition of Done: ${task.doneDefinition || 'Task completed successfully'}\n\nSanity Check: ${task.sanityCheck || 'Review the implementation and confirm it meets requirements.'}\n\nOptions:\n- A: Confirm task completion\n- B: Flag issue (describe the problem)\n\nYour response:`,
-            { slug: `phase-${i + 1}-task-${taskId}-sanity` }
-          );
+        // 6. Sanity check generation & execution
+        if (stage === TASK_STAGES.SANITY_CHECK) {
+          const executableChecks = await agent('sanity-checker', {
+            task: task,
+            implementation: getTaskData(i, taskId, 'code'),
+            testPlan: getTaskData(i, taskId, 'tests')
+          });
+          setTaskData(i, taskId, 'sanity_checks', executableChecks);
 
-          if (isApproval(sanityCheck)) {
-            // Mark task complete
+          const checksDisplay = (executableChecks.checks || [])
+            .map((check) => `  ${check.id}. ${check.description}\n     → ${check.command || check.path || check.testCommand}`)
+            .join('\n');
+
+          const sanityChoice = createInteraction('choice', `phase-${i + 1}-task-${taskId}-sanity-choice`, {
+            prompt: `Sanity checks for "${task.title}":\n\n${checksDisplay}\n\nHow would you like to proceed?`,
+            options: [
+              { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
+              { key: 'auto', label: 'Run automatically', description: 'Agent executes checks and reports results' },
+              { key: 'skip', label: 'Skip verification', description: 'Approve without running checks' }
+            ],
+            allowCustom: true
+          });
+
+          const sanityRaw = await askHuman(formatPrompt(sanityChoice), {
+            slug: sanityChoice.slug,
+            interaction: sanityChoice
+          });
+          const sanityResponse = await parseResponse(sanityChoice, sanityRaw);
+
+          if (sanityResponse.isCustom) {
+            setTaskData(i, taskId, 'feedback', sanityResponse.customText || sanityResponse.raw || sanityRaw);
+            setTaskStage(i, taskId, TASK_STAGES.PENDING);
+            t--;
+            continue;
+          }
+
+          const action = sanityResponse.selectedKey;
+
+          if (action === 'auto') {
+            const results = await agent('sanity-runner', {
+              checks: executableChecks.checks,
+              setup: executableChecks.setup,
+              teardown: executableChecks.teardown
+            });
+            setTaskData(i, taskId, 'sanity_results', results);
+
+            if (results.summary?.failed > 0) {
+              const failedChecks = results.results
+                .filter((r) => r.status === 'failed')
+                .map((r) => `  - Check ${r.id}: ${r.error}`)
+                .join('\n');
+
+              const failChoice = createInteraction('choice', `phase-${i + 1}-task-${taskId}-sanity-fail`, {
+                prompt: `${results.summary.failed} sanity check(s) failed:\n\n${failedChecks}\n\nHow would you like to proceed?`,
+                options: [
+                  { key: 'reimplement', label: 'Re-implement task with this feedback' },
+                  { key: 'ignore', label: 'Ignore failures and approve anyway' }
+                ],
+                allowCustom: true
+              });
+
+              const failRaw = await askHuman(formatPrompt(failChoice), {
+                slug: failChoice.slug,
+                interaction: failChoice
+              });
+              const failResponse = await parseResponse(failChoice, failRaw);
+
+              if (failResponse.selectedKey === 'reimplement' || failResponse.isCustom) {
+                setTaskData(i, taskId, 'feedback', `Sanity check failures:\n${failedChecks}`);
+                setTaskData(i, taskId, 'security_pre', null);
+                setTaskData(i, taskId, 'tests', null);
+                setTaskData(i, taskId, 'code', null);
+                setTaskData(i, taskId, 'review', null);
+                setTaskData(i, taskId, 'security_post', null);
+                setTaskStage(i, taskId, TASK_STAGES.PENDING);
+                t--;
+                continue;
+              }
+            }
+
             setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
+            stage = TASK_STAGES.COMPLETED;
             task.stage = 'completed';
-            memory[tasksKey] = tasks; // Persist updated tasks
+            memory[tasksKey] = tasks;
+            writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, tasks));
+            console.log(`    Task ${t + 1} confirmed complete!\n`);
+          } else if (action === 'skip') {
+            setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
+            stage = TASK_STAGES.COMPLETED;
+            task.stage = 'completed';
+            memory[tasksKey] = tasks;
             writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, tasks));
             console.log(`    Task ${t + 1} confirmed complete!\n`);
           } else {
-            // Store feedback and reset task for reprocessing
-            console.log('    > Issue flagged, reprocessing task with feedback...');
-            setTaskData(i, taskId, 'feedback', sanityCheck);
+            setTaskStage(i, taskId, TASK_STAGES.AWAITING_APPROVAL);
+            stage = TASK_STAGES.AWAITING_APPROVAL;
+          }
+        }
 
-            // Clear previous outputs to force regeneration
+        // 7. Manual approval (for when user runs checks)
+        if (stage === TASK_STAGES.AWAITING_APPROVAL) {
+          const approvalInteraction = createInteraction('choice', `phase-${i + 1}-task-${taskId}-approval`, {
+            prompt: `Task ${t + 1} (${task.title}) complete.\n\nDefinition of Done: ${task.doneDefinition || 'Task completed successfully'}`,
+            options: [
+              { key: 'approve', label: 'Confirm task completion' },
+              { key: 'issue', label: 'Flag issue', description: 'Describe the problem' }
+            ],
+            allowCustom: true
+          });
+
+          const approvalRaw = await askHuman(formatPrompt(approvalInteraction), {
+            slug: approvalInteraction.slug,
+            interaction: approvalInteraction
+          });
+          const approvalResponse = await parseResponse(approvalInteraction, approvalRaw);
+
+          if (approvalResponse.selectedKey === 'approve' || isApproval(approvalResponse.raw || approvalRaw)) {
+            setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
+            task.stage = 'completed';
+            memory[tasksKey] = tasks;
+            writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, tasks));
+            console.log(`    Task ${t + 1} confirmed complete!\n`);
+          } else {
+            console.log('    > Issue flagged, reprocessing task with feedback...');
+            const feedbackText = approvalResponse.customText || approvalResponse.text || approvalResponse.raw || approvalRaw;
+            setTaskData(i, taskId, 'feedback', feedbackText);
+
             setTaskData(i, taskId, 'security_pre', null);
             setTaskData(i, taskId, 'tests', null);
             setTaskData(i, taskId, 'code', null);
             setTaskData(i, taskId, 'review', null);
             setTaskData(i, taskId, 'security_post', null);
+            setTaskData(i, taskId, 'sanity_checks', null);
+            setTaskData(i, taskId, 'sanity_results', null);
 
-            // Reset to pending and reprocess same task
             setTaskStage(i, taskId, TASK_STAGES.PENDING);
-            t--; // Reprocess this task
+            t--;
           }
         }
 
@@ -374,16 +515,27 @@ export default async function () {
         console.error(`    Task ${t + 1} failed: ${error.message}`);
         setTaskStage(i, taskId, TASK_STAGES.FAILED);
 
-        const retry = await askHuman(
-          `Task "${task.title}" failed with error: ${error.message}\n\nOptions:\n- A: Retry this task\n- B: Skip and continue\n- C: Abort workflow\n\nYour choice:`,
-          { slug: `phase-${i + 1}-task-${taskId}-error` }
-        );
+        const retryInteraction = createInteraction('choice', `phase-${i + 1}-task-${taskId}-error`, {
+          prompt: `Task "${task.title}" failed with error: ${error.message}\n\nHow would you like to proceed?`,
+          options: [
+            { key: 'retry', label: 'Retry this task' },
+            { key: 'skip', label: 'Skip and continue' },
+            { key: 'abort', label: 'Abort workflow' }
+          ],
+          allowCustom: true
+        });
 
-        const retryTrimmed = retry.trim().toLowerCase();
-        if (retryTrimmed.startsWith('a') || retryTrimmed.startsWith('retry')) {
+        const retryRaw = await askHuman(formatPrompt(retryInteraction), {
+          slug: retryInteraction.slug,
+          interaction: retryInteraction
+        });
+        const retryResponse = await parseResponse(retryInteraction, retryRaw);
+        const retryValue = (retryResponse.raw || retryRaw).trim().toLowerCase();
+
+        if (retryResponse.selectedKey === 'retry' || retryValue.startsWith('a') || retryValue.startsWith('retry')) {
           setTaskStage(i, taskId, TASK_STAGES.PENDING);
           t--; // Retry this task
-        } else if (retryTrimmed.startsWith('c') || retryTrimmed.startsWith('abort')) {
+        } else if (retryResponse.selectedKey === 'abort' || retryValue.startsWith('c') || retryValue.startsWith('abort')) {
           throw new Error('Workflow aborted by user');
         }
         // Otherwise skip and continue to next task

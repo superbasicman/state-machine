@@ -47,12 +47,14 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const { slug, targetKey, response } = body;
 
-    if (!slug || !response) {
+    if (!slug || response === undefined || response === null) {
       return res.status(400).json({ error: 'Missing required fields: slug, response' });
     }
 
+    const responseString = typeof response === 'string' ? response : JSON.stringify(response);
+
     // Validate response size (max 1MB)
-    if (response.length > 1024 * 1024) {
+    if (responseString.length > 1024 * 1024) {
       return res.status(413).json({ error: 'Response too large (max 1MB)' });
     }
 
@@ -73,7 +75,7 @@ export default async function handler(req, res) {
       event: 'INTERACTION_SUBMITTED',
       slug,
       targetKey: targetKey || `_interaction_${slug}`,
-      answer: response.substring(0, 200) + (response.length > 200 ? '...' : ''),
+      answer: responseString.substring(0, 200) + (responseString.length > 200 ? '...' : ''),
       source: 'remote',
     });
 

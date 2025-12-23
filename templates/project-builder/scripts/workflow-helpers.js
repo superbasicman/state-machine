@@ -83,6 +83,7 @@ const TASK_STAGES = {
   IMPLEMENTING: 'implementing',
   CODE_REVIEW: 'code_review',
   SECURITY_POST: 'security_post',
+  SANITY_CHECK: 'sanity_check',
   AWAITING_APPROVAL: 'awaiting_approval',
   COMPLETED: 'completed',
   FAILED: 'failed'

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest }) {
+export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest, className = "" }) {
   const [inputValue, setInputValue] = useState(page + 1);
   useEffect(() => setInputValue(page + 1), [page]);
 
@@ -15,12 +15,14 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
   };
 
   return (
-    <footer className="nav-footer">
+    <footer className={`nav-footer transition-opacity duration-300 ${className}`}>
       <div className="footer-control">
         <button
           onClick={onPrev}
           disabled={page === 0}
-          className="p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          className="tooltip p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          data-tooltip="Previous"
+          aria-label="Previous event"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -41,7 +43,9 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
         <button
           onClick={onNext}
           disabled={page === total - 1}
-          className="p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          className="tooltip p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          data-tooltip="Next"
+          aria-label="Next event"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
@@ -49,7 +53,9 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
         {hasNew ? (
           <button
             onClick={onJumpToLatest}
-            className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-accent text-white shadow-[0_10px_30px_rgba(0,122,255,0.25)] hover:scale-[1.02] transition-transform"
+            className="tooltip px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-accent text-white shadow-[0_10px_30px_rgba(0,122,255,0.25)] hover:scale-[1.02] transition-transform"
+            data-tooltip="Latest"
+            aria-label="Jump to latest event"
           >
             New
           </button>

@@ -180,7 +180,86 @@ export const InteractionSchema = {
 }
 ```
 
-### 4. `response-interpreter.md` - Maps Natural Language to Actions
+### 4. Agent-Returned Interactions
+
+Agents can return an interaction schema when they need user input. The runtime detects `_interaction` and handles it automatically.
+
+**Agent returning a choice interaction:**
+```js
+// In a JS agent
+export default async function(context) {
+  // Agent does some work...
+  const analysis = analyzeCode(context.code);
+
+  // Agent needs user decision
+  if (analysis.hasMultipleApproaches) {
+    return {
+      _interaction: {
+        type: 'choice',
+        slug: 'approach-selection',
+        prompt: 'Multiple implementation approaches found. Which do you prefer?',
+        options: analysis.approaches.map(a => ({
+          key: a.id,
+          label: a.name,
+          description: a.tradeoffs
+        })),
+        allowCustom: true
+      }
+    };
+  }
+
+  // Normal return
+  return { result: analysis };
+}
+```
+
+**Markdown agent returning interaction (via frontmatter + output):**
+```md
+---
+model: fast
+format: json
+---
+
+Analyze the task and determine if user input is needed.
+
+If you need the user to make a choice, return:
+{
+  "_interaction": {
+    "type": "choice",
+    "slug": "{{slug}}",
+    "prompt": "Your question here",
+    "options": [
+      { "key": "option1", "label": "Option 1", "description": "..." }
+    ]
+  }
+}
+
+Otherwise return your normal result.
+```
+
+**Runtime handling:**
+```js
+// In runtime, after agent execution
+const result = await agent('some-agent', params);
+
+if (result._interaction) {
+  // Agent requested user input - handle via interaction system
+  const interaction = result._interaction;
+  const raw = await askHuman(formatPrompt(interaction), { slug: interaction.slug });
+  const response = await parseResponse(interaction, raw);
+
+  // Re-run agent with user's response
+  const finalResult = await agent('some-agent', {
+    ...params,
+    userResponse: response
+  });
+  return finalResult;
+}
+```
+
+This lets agents dynamically request user input mid-execution without the workflow needing to anticipate every possible interaction point.
+
+### 5. `response-interpreter.md` - Maps Natural Language to Actions
 
 When user responses don't match simple patterns (A/B/C), this agent interprets the intent using the interaction schema.
 
@@ -223,7 +302,7 @@ If user provides a response that doesn't match any option (and `allowCustom: tru
 
 This avoids brittle substring matching like `.includes('auto')` which would incorrectly match "don't do auto".
 
-### 5. No separate mitigator needed
+### 6. No separate mitigator needed
 
 On failure, we already have the loop-back mechanism in workflow.js. Just pass the failure results as feedback to code-writer. This keeps things simple.
 
@@ -280,6 +359,8 @@ The `parseResponse` function handles:
 After code review completes (line ~320 in workflow.js), before the user approval step:
 
 ```js
+import { createInteraction, parseResponse, formatPrompt } from './scripts/interaction-helpers.js';
+
 // 5. Final Security Check
 if (stage === TASK_STAGES.SECURITY_POST) {
   // ... existing security check ...
@@ -297,42 +378,34 @@ if (stage === TASK_STAGES.SANITY_CHECK) {
   });
   setTaskData(i, taskId, 'sanity_checks', executableChecks);
 
-  // Show checks and ask user how to proceed
+  // Build checks display
   const checksDisplay = executableChecks.checks
     .map(c => `  ${c.id}. ${c.description}\n     → ${c.command || c.path || c.testCommand}`)
     .join('\n');
 
-  const choice = await askHuman(
-    `Sanity checks for "${task.title}":\n\n${checksDisplay}\n\nOptions:\n` +
-    `- A: I'll run these manually and confirm\n` +
-    `- B: Run checks automatically\n` +
-    `- C: Skip sanity checks and approve\n\nYour choice:`,
-    { slug: `phase-${i + 1}-task-${taskId}-sanity-choice` }
-  );
+  // Create interaction using schema
+  const interaction = createInteraction('choice', `phase-${i + 1}-task-${taskId}-sanity-choice`, {
+    prompt: `Sanity checks for "${task.title}":\n\n${checksDisplay}\n\nHow would you like to proceed?`,
+    options: [
+      { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
+      { key: 'auto', label: 'Run automatically', description: 'Agent executes checks and reports results' },
+      { key: 'skip', label: 'Skip verification', description: 'Approve without running checks' }
+    ],
+    allowCustom: true
+  });
 
-  // Determine user's choice - try simple matching first, then interpret
-  let action = null;
-  const choiceLower = choice.trim().toLowerCase();
+  const raw = await askHuman(formatPrompt(interaction), { slug: interaction.slug });
+  const response = await parseResponse(interaction, raw);
 
-  // Fast path: simple A/B/C matching
-  if (choiceLower.startsWith('a')) {
-    action = 'manual';
-  } else if (choiceLower.startsWith('b')) {
-    action = 'auto';
-  } else if (choiceLower.startsWith('c')) {
-    action = 'skip';
-  } else {
-    // Slow path: interpret natural language response
-    const interpretation = await agent('response-interpreter', {
-      userResponse: choice,
-      options: [
-        { key: 'manual', description: 'User will run checks manually and confirm' },
-        { key: 'auto', description: 'Run sanity checks automatically' },
-        { key: 'skip', description: 'Skip sanity checks and approve task' }
-      ]
-    });
-    action = interpretation.selectedKey;
+  // Handle custom response (user gave feedback instead of choosing)
+  if (response.isCustom) {
+    setTaskData(i, taskId, 'feedback', response.customText);
+    setTaskStage(i, taskId, TASK_STAGES.PENDING);
+    t--;
+    continue;
   }
+
+  const action = response.selectedKey;
 
   if (action === 'auto') {
     // Run checks automatically
@@ -412,6 +485,314 @@ export const TASK_STAGES = {
 
 ---
 
+## UI Components
+
+The web UI needs to render different interaction types. The current `InteractionForm.jsx` only handles text input.
+
+### Updated `InteractionForm.jsx` (router component)
+
+```jsx
+import ChoiceInteraction from './ChoiceInteraction';
+import ConfirmInteraction from './ConfirmInteraction';
+import TextInteraction from './TextInteraction';
+
+export default function InteractionForm({ interaction, onSubmit, disabled }) {
+  // interaction now contains the full schema
+  const { type } = interaction;
+
+  const handleResponse = (response) => {
+    // All child components return standardized response format
+    onSubmit(interaction.slug, interaction.targetKey, response);
+  };
+
+  switch (type) {
+    case 'choice':
+      return <ChoiceInteraction interaction={interaction} onSubmit={handleResponse} disabled={disabled} />;
+    case 'confirm':
+      return <ConfirmInteraction interaction={interaction} onSubmit={handleResponse} disabled={disabled} />;
+    case 'text':
+    default:
+      return <TextInteraction interaction={interaction} onSubmit={handleResponse} disabled={disabled} />;
+  }
+}
+```
+
+### `ChoiceInteraction.jsx`
+
+```jsx
+import { useState } from 'react';
+import { Bot, Check } from 'lucide-react';
+
+export default function ChoiceInteraction({ interaction, onSubmit, disabled }) {
+  const { prompt, options, multiSelect, allowCustom } = interaction;
+  const [selected, setSelected] = useState(multiSelect ? [] : null);
+  const [customText, setCustomText] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+
+  const handleSelect = (key) => {
+    if (multiSelect) {
+      setSelected(prev =>
+        prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+      );
+      setShowCustom(false);
+    } else {
+      setSelected(key);
+      setShowCustom(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (showCustom && customText.trim()) {
+      onSubmit({ isCustom: true, customText: customText.trim(), raw: customText.trim() });
+    } else if (multiSelect && selected.length > 0) {
+      onSubmit({ selectedKeys: selected, raw: selected.join(', ') });
+    } else if (selected) {
+      onSubmit({ selectedKey: selected, raw: selected });
+    }
+  };
+
+  const isValid = showCustom ? customText.trim() : (multiSelect ? selected.length > 0 : selected);
+
+  return (
+    <div className="w-full h-full flex flex-col items-stretch overflow-hidden">
+      <div className="flex-1 overflow-y-auto custom-scroll px-6 py-12 space-y-8 flex flex-col items-center">
+        {/* Header */}
+        <div className="space-y-4 shrink-0">
+          <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
+            <Bot className="w-8 h-8" />
+          </div>
+          <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Choose an option.</h3>
+        </div>
+
+        {/* Prompt */}
+        <div className="text-xl font-medium text-fg/70 text-center max-w-2xl whitespace-pre-wrap">
+          {prompt}
+        </div>
+
+        {/* Options */}
+        <div className="w-full max-w-2xl space-y-3">
+          {options.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => handleSelect(opt.key)}
+              disabled={disabled}
+              className={`w-full p-6 rounded-2xl border-2 transition-all text-left ${
+                (multiSelect ? selected.includes(opt.key) : selected === opt.key)
+                  ? 'border-accent bg-accent/10'
+                  : 'border-white/10 hover:border-white/20 bg-black/[0.03] dark:bg-white/[0.03]'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                  (multiSelect ? selected.includes(opt.key) : selected === opt.key)
+                    ? 'border-accent bg-accent text-white'
+                    : 'border-white/20'
+                }`}>
+                  {(multiSelect ? selected.includes(opt.key) : selected === opt.key) && <Check className="w-4 h-4" />}
+                </div>
+                <div className="flex-1">
+                  <div className="font-bold text-lg">{opt.label}</div>
+                  {opt.description && <div className="text-sm text-fg/50 mt-1">{opt.description}</div>}
+                </div>
+              </div>
+            </button>
+          ))}
+
+          {/* Custom/Other option */}
+          {allowCustom && (
+            <button
+              onClick={() => { setShowCustom(true); setSelected(multiSelect ? [] : null); }}
+              disabled={disabled}
+              className={`w-full p-6 rounded-2xl border-2 transition-all text-left ${
+                showCustom
+                  ? 'border-accent bg-accent/10'
+                  : 'border-white/10 hover:border-white/20 bg-black/[0.03] dark:bg-white/[0.03]'
+              }`}
+            >
+              <div className="font-bold text-lg">Other</div>
+              <div className="text-sm text-fg/50 mt-1">Provide a custom response</div>
+            </button>
+          )}
+
+          {/* Custom text input */}
+          {showCustom && (
+            <textarea
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              placeholder="Type your response..."
+              className="w-full h-32 p-6 rounded-2xl bg-black/[0.03] dark:bg-white/[0.03] border-2 border-accent/30 focus:border-accent focus:outline-none text-lg"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Submit button */}
+      <div className="p-4 flex justify-center bg-gradient-to-t from-bg via-bg to-transparent shrink-0 border-t border-white/5">
+        <button
+          onClick={handleSubmit}
+          disabled={disabled || !isValid}
+          className="px-12 py-6 bg-fg text-bg rounded-full font-bold text-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-2xl"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### `ConfirmInteraction.jsx`
+
+```jsx
+import { Bot } from 'lucide-react';
+
+export default function ConfirmInteraction({ interaction, onSubmit, disabled }) {
+  const { prompt, confirmLabel = 'Confirm', cancelLabel = 'Cancel', context } = interaction;
+
+  return (
+    <div className="w-full h-full flex flex-col items-stretch overflow-hidden">
+      <div className="flex-1 overflow-y-auto custom-scroll px-6 py-12 space-y-8 flex flex-col items-center justify-center">
+        <div className="space-y-4">
+          <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
+            <Bot className="w-8 h-8" />
+          </div>
+          <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Confirm action.</h3>
+        </div>
+
+        <div className="text-xl font-medium text-fg/70 text-center max-w-2xl whitespace-pre-wrap">
+          {prompt}
+        </div>
+
+        {context?.documentPath && (
+          <div className="text-sm text-fg/40 text-center">
+            Review: <code className="bg-white/10 px-2 py-1 rounded">{context.documentPath}</code>
+          </div>
+        )}
+      </div>
+
+      {/* Two-button layout */}
+      <div className="p-4 flex justify-center gap-4 bg-gradient-to-t from-bg via-bg to-transparent shrink-0 border-t border-white/5">
+        <button
+          onClick={() => onSubmit({ confirmed: false, raw: cancelLabel })}
+          disabled={disabled}
+          className="px-12 py-6 bg-white/10 text-fg rounded-full font-bold text-xl hover:bg-white/20 transition-all disabled:opacity-30"
+        >
+          {cancelLabel}
+        </button>
+        <button
+          onClick={() => onSubmit({ confirmed: true, raw: confirmLabel })}
+          disabled={disabled}
+          className="px-12 py-6 bg-fg text-bg rounded-full font-bold text-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-2xl"
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### `TextInteraction.jsx` (extracted from current form)
+
+```jsx
+import { useState } from 'react';
+import { Bot } from 'lucide-react';
+
+export default function TextInteraction({ interaction, onSubmit, disabled }) {
+  const { prompt, placeholder, validation } = interaction;
+  const [text, setText] = useState('');
+  const [error, setError] = useState(null);
+
+  const validate = (value) => {
+    if (!validation) return null;
+    if (validation.minLength && value.length < validation.minLength) {
+      return `Minimum ${validation.minLength} characters required`;
+    }
+    if (validation.maxLength && value.length > validation.maxLength) {
+      return `Maximum ${validation.maxLength} characters allowed`;
+    }
+    if (validation.pattern && !new RegExp(validation.pattern).test(value)) {
+      return 'Invalid format';
+    }
+    return null;
+  };
+
+  const handleSubmit = () => {
+    const err = validate(text.trim());
+    if (err) {
+      setError(err);
+      return;
+    }
+    onSubmit({ text: text.trim(), raw: text.trim() });
+  };
+
+  return (
+    <div className="w-full h-full flex flex-col items-stretch overflow-hidden">
+      <div className="flex-1 overflow-y-auto custom-scroll px-6 py-12 space-y-8 flex flex-col items-center">
+        <div className="space-y-4 shrink-0">
+          <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
+            <Bot className="w-8 h-8" />
+          </div>
+          <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Action required.</h3>
+        </div>
+
+        <div className="w-full max-w-2xl space-y-4">
+          <div className="text-xl font-medium text-fg/70 text-center whitespace-pre-wrap">
+            {prompt || 'Provide your response.'}
+          </div>
+          <textarea
+            value={text}
+            onChange={(e) => { setText(e.target.value); setError(null); }}
+            disabled={disabled}
+            placeholder={placeholder || 'Your response...'}
+            className={`w-full h-64 p-8 rounded-[32px] bg-black/[0.03] dark:bg-white/[0.03] border-2 ${
+              error ? 'border-red-500' : 'border-transparent'
+            } focus:ring-4 focus:ring-accent/10 focus:outline-none text-2xl font-medium transition-all text-center placeholder:opacity-20`}
+          />
+          {error && <div className="text-red-500 text-center text-sm">{error}</div>}
+        </div>
+      </div>
+
+      <div className="p-4 flex justify-center bg-gradient-to-t from-bg via-bg to-transparent shrink-0 border-t border-white/5">
+        <button
+          onClick={handleSubmit}
+          disabled={disabled || !text.trim()}
+          className="px-12 py-6 bg-fg text-bg rounded-full font-bold text-xl hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-2xl"
+        >
+          Submit Response
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### Backend: Include interaction schema in API response
+
+The interaction endpoint needs to return the full schema, not just `question`:
+
+```js
+// In API route that serves interactions
+return {
+  slug: interaction.slug,
+  targetKey: interaction.targetKey,
+  // Old field for backwards compat
+  question: interaction.prompt,
+  // New: full interaction schema
+  type: interaction.type || 'text',
+  prompt: interaction.prompt,
+  options: interaction.options,
+  allowCustom: interaction.allowCustom,
+  multiSelect: interaction.multiSelect,
+  validation: interaction.validation,
+  confirmLabel: interaction.confirmLabel,
+  cancelLabel: interaction.cancelLabel,
+  context: interaction.context
+};
+```
+
+---
+
 ## Implementation Checklist
 
 1. [ ] Create `schemas/interaction.schema.js`
@@ -424,30 +805,46 @@ export const TASK_STAGES = {
    - `parseResponse(interaction, rawResponse)` - handles simple matching + interpreter fallback
    - `formatPrompt(interaction)` - renders interaction as terminal text
 
-3. [ ] Create `agents/sanity-checker.md`
-   - Model: fast (just needs to analyze code and generate commands)
-   - Format: json
-   - Takes task + implementation, outputs executable checks
-
-4. [ ] Create `agents/sanity-runner.js`
-   - JS agent (needs to spawn processes)
-   - Executes checks sequentially with timeout protection
-   - Returns structured pass/fail results
-
-5. [ ] Create `agents/response-interpreter.md`
+3. [ ] Create `agents/response-interpreter.md`
    - Model: fast
    - Format: json
    - Takes userResponse + interaction schema, returns structured response
    - Handles custom/freeform responses when allowCustom is true
 
-6. [ ] Update `scripts/workflow-helpers.js`
+4. [ ] Update `lib/runtime/agent.js`
+   - Detect `_interaction` in agent return value
+   - Handle interaction flow (prompt user, parse response, re-run agent)
+   - Pass `userResponse` back to agent on re-run
+
+5. [ ] Create `agents/sanity-checker.md`
+   - Model: fast (just needs to analyze code and generate commands)
+   - Format: json
+   - Takes task + implementation, outputs executable checks
+
+6. [ ] Create `agents/sanity-runner.js`
+   - JS agent (needs to spawn processes)
+   - Executes checks sequentially with timeout protection
+   - Returns structured pass/fail results
+
+7. [ ] Update `scripts/workflow-helpers.js`
    - Add `SANITY_CHECK` stage
 
-7. [ ] Update `workflow.js`
+8. [ ] Update `workflow.js`
    - Refactor askHuman calls to use interaction schema
    - Insert sanity check step between SECURITY_POST and AWAITING_APPROVAL
-   - Add user choice flow with interpreter fallback
    - Wire up failure loop-back
+
+9. [ ] Update UI components for interaction types
+   - Update `InteractionForm.jsx` to detect interaction type and render appropriate component
+   - Create `ChoiceInteraction.jsx` - radio/chip selection for single choice, checkboxes for multiSelect
+   - Create `ConfirmInteraction.jsx` - two-button confirm/cancel layout
+   - Create `TextInteraction.jsx` (extract from existing) - add validation support
+   - All components use same response format back to parent
+
+10. [ ] Update backend API for interaction schema
+    - Modify interaction endpoint to return full schema (type, options, etc.)
+    - Keep backwards compat with `question` field
+    - Update interaction file format to store schema
 
 ---
 
@@ -464,3 +861,8 @@ export const TASK_STAGES = {
   - **Testable** - Interactions are data, making them easy to unit test
   - **Reusable** - Same schema powers `askHuman()`, agent-requested interactions, and the interpreter
   - **Self-documenting** - Looking at an interaction schema tells you exactly what's being asked
+- **Why agent-returned interactions?**
+  - Agents can dynamically request input without workflows anticipating every case
+  - Same schema format whether interaction comes from workflow or agent
+  - Runtime handles the flow automatically - agents don't need to know about `askHuman`
+  - Enables "smart" agents that ask clarifying questions only when needed
