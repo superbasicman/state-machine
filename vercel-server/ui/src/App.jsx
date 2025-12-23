@@ -110,6 +110,17 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.div
             key={pageIndex}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragEnd={(e, { offset, velocity }) => {
+              const swipeThreshold = 50;
+              if (offset.x > swipeThreshold || velocity.x > 500) {
+                prev();
+              } else if (offset.x < -swipeThreshold || velocity.x < -500) {
+                next();
+              }
+            }}
             initial={{ opacity: 0, scale: 0.99, filter: "blur(4px)" }}
             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
             exit={{ opacity: 0, scale: 1.01, filter: "blur(4px)" }}
@@ -149,9 +160,6 @@ export default function App() {
         hasNew={hasNew}
         onJumpToLatest={() => setPageIndex(history.length - 1)}
       />
-
-      <div className="nav-hitbox left" onClick={prev}></div>
-      <div className="nav-hitbox right" onClick={next}></div>
     </div>
   );
 }

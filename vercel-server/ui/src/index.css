@@ -111,27 +111,3 @@ body {
   border-radius: 99px;
   border: 1px solid var(--border);
 }
-
-.nav-hitbox {
-  position: fixed;
-  top: 80px;
-  bottom: 80px;
-  width: 15%;
-  z-index: 40;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.nav-hitbox:hover {
-  opacity: 0.05;
-  background: var(--fg);
-}
-
-.nav-hitbox.left {
-  left: 0;
-}
-
-.nav-hitbox.right {
-  right: 0;
-}
