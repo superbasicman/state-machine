@@ -2,6 +2,7 @@
 model: med
 format: json
 interaction: true
+response: choice
 ---
 
 # Security Clarifier Agent
@@ -24,28 +25,20 @@ Analyze the project for security implications. Consider:
 **Data Security:**
 - Sensitive data handling (PII, financial, health)
 - Data encryption requirements
-- Data retention policies
 
 **Access Control:**
 - Authentication requirements
 - Authorization model
-- Role-based access needs
 
 **Compliance:**
 - Regulatory requirements (GDPR, HIPAA, PCI-DSS)
-- Industry standards
 - Audit requirements
 
-**Infrastructure:**
-- Network security
-- API security
-- Deployment security
-
-If security requirements need clarification, ask using the interact format:
-
-{
-  "interact": "Please clarify security requirements:\n\n1. Sensitive Data:\n   - A: No sensitive data handled\n   - B: Personal information (names, emails)\n   - C: Financial data (payments, transactions)\n   - D: Health/medical data\n   - E: Other regulated data\n\n2. Compliance Requirements:\n   - A: No specific compliance needed\n   - B: GDPR (EU data protection)\n   - C: HIPAA (healthcare)\n   - D: PCI-DSS (payment cards)\n   - E: SOC2 / enterprise security\n\n3. Authentication Level:\n   - A: Basic (username/password)\n   - B: Enhanced (MFA, SSO)\n   - C: Enterprise (LDAP, SAML)\n\nPlease respond with your choices and details:"
-}
+If security requirements need clarification, ask ONE question. Example slugs:
+- "sec-data": Sensitive data types handled (none, PII, financial, health)
+- "sec-compliance": Compliance requirements (GDPR, HIPAA, PCI-DSS, SOC2)
+- "sec-auth": Authentication level (basic, MFA, SSO, enterprise)
+- "sec-audit": Audit/logging requirements
 
 If security requirements are clear, return:
 

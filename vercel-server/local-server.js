@@ -112,13 +112,15 @@ function sendJson(res, status, data) {
  */
 async function handleCliPost(req, res) {
   const body = await parseBody(req);
-  const { type, sessionToken } = body;
+  const { sessionToken } = body;
+  // Support both _action (new) and type (legacy) for message routing
+  const action = body._action || body.type;
 
   if (!sessionToken) {
     return sendJson(res, 400, { error: 'Missing sessionToken' });
   }
 
-  switch (type) {
+  switch (action) {
     case 'session_init': {
       const { workflowName, history } = body;
       createSession(sessionToken, { workflowName, history });
@@ -152,7 +154,7 @@ async function handleCliPost(req, res) {
         ...eventData,
       };
       delete historyEvent.sessionToken;
-      delete historyEvent.type;
+      delete historyEvent._action;  // Remove routing field, preserve type (interaction type)
 
       // Add to history
       session.history.unshift(historyEvent);
@@ -179,7 +181,7 @@ async function handleCliPost(req, res) {
     }
 
     default:
-      return sendJson(res, 400, { error: `Unknown type: ${type}` });
+      return sendJson(res, 400, { error: `Unknown action: ${action}` });
   }
 }
 
