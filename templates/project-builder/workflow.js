@@ -8,7 +8,7 @@
  * 4. Task lifecycle with optimal agent sequencing
  */
 
-import { memory, askHuman } from 'agent-state-machine';
+import { agent, memory, askHuman } from 'agent-state-machine';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -16,7 +16,6 @@ import {
   isApproval,
   renderRoadmapMarkdown,
   renderTasksMarkdown,
-  safeAgent,
   TASK_STAGES,
   getTaskStage,
   setTaskStage,
@@ -61,7 +60,7 @@ export default async function () {
   // 1. Scope Clarification
   if (!memory.scopeClarified) {
     console.log('--- Scope Clarification ---');
-    const scopeResult = await safeAgent('scope-clarifier', {
+    const scopeResult = await agent('scope-clarifier', {
       projectDescription: memory.projectDescription
     });
     memory.scope = scopeResult;
@@ -71,7 +70,7 @@ export default async function () {
   // 2. Requirements Clarification
   if (!memory.requirementsClarified) {
     console.log('--- Requirements Clarification ---');
-    const reqResult = await safeAgent('requirements-clarifier', {
+    const reqResult = await agent('requirements-clarifier', {
       projectDescription: memory.projectDescription,
       scope: memory.scope
     });
@@ -82,7 +81,7 @@ export default async function () {
   // 3. Assumptions Clarification
   if (!memory.assumptionsClarified) {
     console.log('--- Assumptions Clarification ---');
-    const assumeResult = await safeAgent('assumptions-clarifier', {
+    const assumeResult = await agent('assumptions-clarifier', {
       projectDescription: memory.projectDescription,
       scope: memory.scope,
       requirements: memory.requirements
@@ -94,7 +93,7 @@ export default async function () {
   // 4. Security Clarification
   if (!memory.securityClarified) {
     console.log('--- Security Clarification ---');
-    const secResult = await safeAgent('security-clarifier', {
+    const secResult = await agent('security-clarifier', {
       projectDescription: memory.projectDescription,
       scope: memory.scope,
       requirements: memory.requirements,
@@ -114,7 +113,7 @@ export default async function () {
   if (!memory.roadmapApproved) {
     // Generate roadmap as JSON
     if (!memory.roadmap) {
-      const roadmapResult = await safeAgent('roadmap-generator', {
+      const roadmapResult = await agent('roadmap-generator', {
         projectDescription: memory.projectDescription,
         scope: memory.scope,
         requirements: memory.requirements,
@@ -140,7 +139,7 @@ export default async function () {
         console.log('Roadmap approved!\n');
       } else {
         // Regenerate roadmap with feedback
-        const updatedRoadmap = await safeAgent('roadmap-generator', {
+        const updatedRoadmap = await agent('roadmap-generator', {
           projectDescription: memory.projectDescription,
           scope: memory.scope,
           requirements: memory.requirements,
@@ -178,7 +177,7 @@ export default async function () {
     // Generate task list for this phase (as JSON)
     if (!memory[tasksApprovedKey]) {
       if (!memory[tasksKey]) {
-        const taskResult = await safeAgent('task-planner', {
+        const taskResult = await agent('task-planner', {
           projectDescription: memory.projectDescription,
           scope: memory.scope,
           requirements: memory.requirements,
@@ -203,7 +202,7 @@ export default async function () {
           memory[tasksApprovedKey] = true;
           console.log(`Phase ${i + 1} task list approved!\n`);
         } else {
-          const updatedTasks = await safeAgent('task-planner', {
+          const updatedTasks = await agent('task-planner', {
             projectDescription: memory.projectDescription,
             scope: memory.scope,
             requirements: memory.requirements,
@@ -241,6 +240,15 @@ export default async function () {
       // Get current stage for this task
       let stage = getTaskStage(i, taskId);
 
+      // Update progress tracking for remote monitoring
+      memory.progress = {
+        phase: `${i + 1}/${phases.length}`,
+        task: `${t + 1}/${tasks.length}`,
+        stage: stage,
+        currentTask: task.title,
+        currentPhase: phase.title
+      };
+
       // Store any feedback for this task
       const feedback = getTaskData(i, taskId, 'feedback');
 
@@ -249,7 +257,7 @@ export default async function () {
         if (stage === TASK_STAGES.PENDING || stage === TASK_STAGES.SECURITY_PRE) {
           if (!getTaskData(i, taskId, 'security_pre')) {
             console.log('    > Security pre-review...');
-            const securityPreReview = await safeAgent('security-reviewer', {
+            const securityPreReview = await agent('security-reviewer', {
               task: task,
               phase: phase,
               scope: memory.scope,
@@ -266,7 +274,7 @@ export default async function () {
         if (stage === TASK_STAGES.TEST_PLANNING) {
           if (!getTaskData(i, taskId, 'tests')) {
             console.log('    > Test planning...');
-            const testPlan = await safeAgent('test-planner', {
+            const testPlan = await agent('test-planner', {
               task: task,
               phase: phase,
               requirements: memory.requirements,
@@ -283,7 +291,7 @@ export default async function () {
         if (stage === TASK_STAGES.IMPLEMENTING) {
           if (!getTaskData(i, taskId, 'code')) {
             console.log('    > Code implementation...');
-            const implementation = await safeAgent('code-writer', {
+            const implementation = await agent('code-writer', {
               task: task,
               phase: phase,
               requirements: memory.requirements,
@@ -301,7 +309,7 @@ export default async function () {
         if (stage === TASK_STAGES.CODE_REVIEW) {
           if (!getTaskData(i, taskId, 'review')) {
             console.log('    > Code review...');
-            const codeReview = await safeAgent('code-reviewer', {
+            const codeReview = await agent('code-reviewer', {
               task: task,
               implementation: getTaskData(i, taskId, 'code'),
               testPlan: getTaskData(i, taskId, 'tests'),
@@ -317,7 +325,7 @@ export default async function () {
         if (stage === TASK_STAGES.SECURITY_POST) {
           if (!getTaskData(i, taskId, 'security_post')) {
             console.log('    > Final security check...');
-            const securityPostReview = await safeAgent('security-reviewer', {
+            const securityPostReview = await agent('security-reviewer', {
               task: task,
               phase: phase,
               implementation: getTaskData(i, taskId, 'code'),

@@ -1,15 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { agent, memory } from 'agent-state-machine';
-
-// Normalize agent output - always extract the result consistently
-function unwrap(agentResult) {
-  if (!agentResult) return null;
-  if (typeof agentResult === 'object' && 'result' in agentResult) {
-    return agentResult.result;
-  }
-  return agentResult;
-}
+import { memory } from 'agent-state-machine';
 
 // Write markdown file to workflow state directory
 function writeMarkdownFile(stateDir, filename, content) {
@@ -84,41 +75,6 @@ function renderTasksMarkdown(phaseNumber, phaseTitle, tasks) {
   return md;
 }
 
-// Run agent with error handling and retry capability
-async function safeAgent(name, params, options = {}) {
-  const { maxRetries = 1, onError } = options;
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await agent(name, params);
-      return unwrap(result);
-    } catch (error) {
-      lastError = error;
-      console.error(`  [Agent: ${name}] Error (attempt ${attempt}/${maxRetries}): ${error.message}`);
-
-      if (onError) {
-        const shouldRetry = await onError(error, attempt);
-        if (!shouldRetry) break;
-      }
-
-      if (attempt < maxRetries) {
-        console.log(`  [Agent: ${name}] Retrying...`);
-      }
-    }
-  }
-
-  // Store error in memory for debugging
-  if (!memory._errors) memory._errors = [];
-  memory._errors.push({
-    agent: name,
-    error: lastError?.message,
-    timestamp: new Date().toISOString()
-  });
-
-  throw lastError;
-}
-
 // Task stage management
 const TASK_STAGES = {
   PENDING: 'pending',
@@ -153,12 +109,10 @@ function setTaskData(phaseIndex, taskId, dataKey, value) {
 }
 
 export {
-  unwrap,
   writeMarkdownFile,
   isApproval,
   renderRoadmapMarkdown,
   renderTasksMarkdown,
-  safeAgent,
   TASK_STAGES,
   getTaskStage,
   setTaskStage,

@@ -394,7 +394,7 @@ async function runOrResume(
   // Enable remote follow mode if we have a URL
   if (remoteUrl) {
     const sessionToken = ensureRemotePath(configFile, { forceNew: forceNewRemotePath });
-    await runtime.enableRemote(remoteUrl, { sessionToken });
+    await runtime.enableRemote(remoteUrl, { sessionToken, uiBaseUrl: useLocalServer });
   }
 
   try {

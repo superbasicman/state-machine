@@ -24,6 +24,7 @@ const PORT = process.env.PORT || 3001;
 
 // In-memory session storage
 const sessions = new Map();
+let latestSessionToken = null;
 
 // SSE clients per session
 const sseClients = new Map(); // token -> Set<res>
@@ -44,6 +45,7 @@ function createSession(token, data) {
     createdAt: Date.now(),
   };
   sessions.set(token, session);
+  latestSessionToken = token;
   return session;
 }
 
@@ -395,6 +397,16 @@ function serveSessionUI(res, token) {
 
 // getSessionHTML was moved up and updated to read from MASTER_TEMPLATE_PATH
 
+function getDefaultSessionToken() {
+  if (latestSessionToken && sessions.has(latestSessionToken)) {
+    return latestSessionToken;
+  }
+  if (sessions.size === 1) {
+    return sessions.keys().next().value;
+  }
+  return null;
+}
+
 /**
  * Serve static files
  */
@@ -470,7 +482,15 @@ async function handleRequest(req, res) {
   }
 
   // Route: Static files
-  if (pathname === '/' || pathname === '/index.html') {
+  if (pathname === '/') {
+    const defaultToken = getDefaultSessionToken();
+    if (defaultToken) {
+      return serveSessionUI(res, defaultToken);
+    }
+    return serveStatic(res, 'index.html');
+  }
+
+  if (pathname === '/index.html') {
     return serveStatic(res, 'index.html');
   }
 

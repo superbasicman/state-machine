@@ -1,6 +1,5 @@
 ---
 model: high
-output: result
 format: json
 ---
 

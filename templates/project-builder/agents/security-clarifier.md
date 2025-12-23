@@ -1,6 +1,5 @@
 ---
 model: med
-output: result
 format: json
 interaction: true
 ---
