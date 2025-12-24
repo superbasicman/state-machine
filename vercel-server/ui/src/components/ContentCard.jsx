@@ -1,5 +1,5 @@
 import CopyButton from "./CopyButton.jsx";
-import { Bot, ChevronRight } from "lucide-react";
+import { Bot, Brain, ChevronRight } from "lucide-react";
 
 function AgentStartedIcon({ className = "" }) {
   return (
@@ -283,6 +283,9 @@ export default function ContentCard({ item }) {
             <summary className="cursor-pointer select-none px-6 py-5 flex items-center justify-between gap-6 [&::-webkit-details-marker]:hidden">
               <div className="flex items-center gap-3">
                 <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                {contextTitle === "Current Context" ? (
+                  <Brain className="w-4 h-4" aria-hidden="true" />
+                ) : null}
                 <div className="text-sm font-semibold tracking-[0.12em] uppercase">
                   {contextTitle}
                 </div>
@@ -380,12 +383,9 @@ export default function ContentCard({ item }) {
             <div className="rounded-[28px] border border-black px-6 py-5 dark:border-white">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="text-3xl font-black tracking-tight">
-                  {item.agent ? `Output from ${item.agent}` : "Agent output"}
-                </div>
+                  Agent <i>{item.agent ? " " + item.agent : ""}</i> responded
+                </div> 
                 <div className="text-xs font-mono">{time}</div>
-              </div>
-              <div className="mt-2 text-sm">
-                This is what the previous agent run produced.
               </div>
             </div>
 

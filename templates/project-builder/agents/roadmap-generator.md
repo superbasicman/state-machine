@@ -7,16 +7,6 @@ format: json
 
 You are a project planning specialist. Generate a phased development roadmap as structured JSON.
 
-## Context
-Project Description: {{projectDescription}}
-Scope: {{scope}}
-Requirements: {{requirements}}
-Assumptions: {{assumptions}}
-Security: {{security}}
-{{#if feedback}}
-User Feedback: {{feedback}}
-{{/if}}
-
 ## Instructions
 
 Create a phased roadmap as a JSON object. Each phase should:

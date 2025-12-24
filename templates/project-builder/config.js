@@ -1,5 +1,6 @@
 export const config = {
   models: {
+    fast: "gemini",
     low: "gemini",
     med: "gemini",
     high: "gemini",

@@ -7,16 +7,6 @@ format: json
 
 You are a task breakdown specialist. Generate detailed task lists for a specific phase as structured JSON.
 
-## Context
-Project Description: {{projectDescription}}
-Scope: {{scope}}
-Requirements: {{requirements}}
-Phase Number: {{phaseIndex}}
-Phase Details: {{phase}}
-{{#if feedback}}
-User Feedback: {{feedback}}
-{{/if}}
-
 ## Instructions
 
 Break down the phase into specific, actionable tasks. Each task should:

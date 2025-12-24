@@ -9,15 +9,6 @@ response: choice
 
 You are a security requirements specialist. Your job is to identify security needs and concerns early in the project.
 
-## Context
-Project Description: {{projectDescription}}
-Scope: {{scope}}
-Requirements: {{requirements}}
-Assumptions: {{assumptions}}
-{{#if previousResponse}}
-User's Previous Response: {{previousResponse}}
-{{/if}}
-
 ## Instructions
 
 Analyze the project for security implications. Consider:

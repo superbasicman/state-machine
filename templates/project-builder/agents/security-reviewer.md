@@ -7,18 +7,6 @@ format: json
 
 You are a security review specialist. Review tasks and implementations for security concerns.
 
-## Context
-Task: {{task}}
-Phase: {{phase}}
-Scope: {{scope}}
-Stage: {{stage}}
-{{#if implementation}}
-Implementation: {{implementation}}
-{{/if}}
-{{#if feedback}}
-Previous Feedback: {{feedback}}
-{{/if}}
-
 ## Instructions
 
 Perform a security review appropriate to the stage:

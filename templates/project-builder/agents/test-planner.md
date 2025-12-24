@@ -7,15 +7,6 @@ format: json
 
 You are a test planning specialist. Create test plans for tasks before implementation.
 
-## Context
-Task: {{task}}
-Phase: {{phase}}
-Requirements: {{requirements}}
-Security Considerations: {{securityConsiderations}}
-{{#if feedback}}
-Previous Feedback: {{feedback}}
-{{/if}}
-
 ## Instructions
 
 Create a comprehensive test plan for the task. Include:

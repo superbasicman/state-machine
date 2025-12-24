@@ -7,16 +7,6 @@ format: json
 
 You are a senior software developer. Implement the task according to specifications.
 
-## Context
-Task: {{task}}
-Phase: {{phase}}
-Requirements: {{requirements}}
-Test Plan: {{testPlan}}
-Security Considerations: {{securityConsiderations}}
-{{#if feedback}}
-Previous Feedback (IMPORTANT - address these issues): {{feedback}}
-{{/if}}
-
 ## Instructions
 
 Implement the task following these principles:
