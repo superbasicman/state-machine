@@ -10,6 +10,7 @@ Agent State Machine is a **native JavaScript workflow runner**.
 You write a workflow as normal `async/await` JavaScript, and the runtime provides:
 - `agent(name, params?, options?)` for running specialized task handlers
 - `memory` that **persists to disk** on mutation
+- `fileTree` that **auto-tracks file changes** made by agents (Git-based detection)
 - Human-in-the-loop blocking through `askHuman()` and agent-driven interactions
 - Agents implemented as **JS modules** or **Markdown prompt templates**
 - LLM calls via local CLI tools or provider APIs
@@ -65,7 +66,12 @@ Templates live under `templates/` and `starter` is the default.
     - API targets using `api:<provider>:<model>` with keys from workflow config
   - Captures full prompt traces in `history.jsonl`.
 - `lib/index.js`
-  - Public exports used by workflows and agents (`agent`, `memory`, `askHuman`, `parallel`, `llm`, etc.).
+  - Public exports used by workflows and agents (`agent`, `memory`, `fileTree`, `askHuman`, `parallel`, `llm`, etc.).
+- `lib/file-tree.js`
+  - Git-based and filesystem change detection utilities.
+  - Export extraction for JS/TS files.
+- `lib/runtime/track-changes.js`
+  - `withChangeTracking()` wrapper that captures baseline before agents run and detects changes after.
 
 ### Workflow folder layout (created by `--setup`)
 
@@ -86,7 +92,7 @@ workflows/<name>/
 Workflows are plain JS modules that export a default async function:
 
 ```js
-import { agent, memory, askHuman, parallel } from 'agent-state-machine';
+import { agent, memory, fileTree, askHuman, parallel } from 'agent-state-machine';
 
 export const config = {
   models: {
@@ -95,7 +101,12 @@ export const config = {
   },
   apiKeys: {
     openai: process.env.OPENAI_API_KEY
-  }
+  },
+  // File tracking (optional - all have defaults)
+  // projectRoot: '../..',           // defaults to ../.. from workflow
+  // fileTracking: true,             // enable/disable
+  // fileTrackingIgnore: [...],      // glob patterns to ignore
+  // fileTrackingKeepDeleted: false  // keep deleted files in tree
 };
 
 export default async function () {
@@ -105,12 +116,14 @@ export default async function () {
   const result = await agent('research', { topic });
   memory.research = result;
 
-  const [a, b] = await parallel([
-    agent('summarize', { topic, mode: 'short' }),
-    agent('summarize', { topic, mode: 'long' }),
-  ]);
+  // Files created by agents are auto-tracked in memory.fileTree
+  await agent('code-writer', { task: 'Create auth module' });
+  console.log(memory.fileTree); // { "src/auth.js": { status: "created", ... } }
 
-  memory.outputs = { a, b };
+  // Pass file context to other agents
+  await agent('code-reviewer', { fileTree: memory.fileTree });
+
+  memory.outputs = { topic, research: result };
 }
 ```
 
@@ -142,9 +155,14 @@ export default async function (context) {
   // context contains:
   // - params passed to agent(name, params)
   // - context._steering.global and optional additional steering content
-  // - context._config (models, apiKeys, workflowDir)
+  // - context._config (models, apiKeys, workflowDir, projectRoot)
   const resp = await llm(context, { model: 'fast', prompt: 'Say hello.' });
-  return { text: resp.text };
+
+  // Optionally return _files to annotate tracked files with captions
+  return {
+    text: resp.text,
+    _files: [{ path: 'src/hello.js', caption: 'Greeting module' }]
+  };
 }
 ```
 
@@ -213,10 +231,106 @@ When an interaction is requested, the runtime:
 Per workflow, persisted files live under `workflows/<name>/state/`:
 
 - `current.json`
-  - `memory`: persisted workflow memory
+  - `memory`: persisted workflow memory (includes `fileTree` if tracking is enabled)
   - `status`: `IDLE | RUNNING | FAILED | COMPLETED`
 - `history.jsonl`
   - event log, newest entries prepended (contains full prompt traces and agent retry/failure events)
+
+---
+
+## File tree tracking
+
+The runtime automatically tracks file changes made during agent execution using Git (or filesystem snapshots as fallback).
+
+### How it works
+
+1. Before each `await agent(...)`, the runtime captures a Git baseline
+2. After the agent completes, it diffs against baseline to detect created/modified/deleted files
+3. Changes are stored in `memory.fileTree` and persisted to `current.json`
+4. Agents can optionally return `_files` to add captions or metadata
+
+### Data structure
+
+```js
+memory.fileTree = {
+  "src/auth.js": {
+    path: "src/auth.js",
+    status: "created",           // created | modified | deleted
+    caption: "Auth module",      // from _files annotation
+    createdBy: "code-writer",    // agent that created it
+    lastModifiedBy: "code-writer",
+    createdAt: "2025-01-15T10:30:00.000Z",
+    updatedAt: "2025-01-15T10:30:00.000Z",
+    exports: ["login", "logout"] // optional, if extractExports was used
+  }
+}
+```
+
+### Configuration
+
+In your workflow's `config.js`:
+
+```js
+export const config = {
+  // ... models and apiKeys ...
+
+  projectRoot: process.env.PROJECT_ROOT,  // defaults to ../.. from workflow
+  fileTracking: true,                     // enable/disable (default: true)
+  fileTrackingIgnore: [                   // patterns to ignore
+    'node_modules/**',
+    '.git/**',
+    'dist/**',
+    'workflows/**'
+  ],
+  fileTrackingKeepDeleted: false          // keep deleted files with status: "deleted"
+};
+```
+
+### Agent context
+
+Agents automatically receive location context:
+
+- **JS agents**: Access `context._config.workflowDir` and `context._config.projectRoot`
+- **Markdown agents**: Prompt includes a "File Context" section with both paths
+
+The prompt footer tells agents:
+- Where they're running from (workflowDir)
+- Where to create files (projectRoot)
+- To use paths relative to projectRoot
+
+### Agent annotations
+
+Agents can return `_files` to annotate tracked files:
+
+```js
+return {
+  result: "Created auth module",
+  _files: [
+    { path: "src/auth.js", caption: "Authentication utilities" },
+    { path: "src/auth.test.js", caption: "Auth tests", extractExports: true }
+  ]
+};
+```
+
+### Manual tracking
+
+Use these utilities for manual control:
+
+```js
+import { trackFile, getFileTree, untrackFile, fileTree } from 'agent-state-machine';
+
+// Track a file manually
+trackFile('README.md', { caption: 'Project docs' });
+
+// Access via proxy
+console.log(fileTree['src/auth.js']);
+
+// Get all tracked files
+const tree = getFileTree();
+
+// Remove from tracking
+untrackFile('old-file.js');
+```
 
 ---
 

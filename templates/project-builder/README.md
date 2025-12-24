@@ -1,60 +1,97 @@
-# project-builder
+# agent-state-machine
 
-A workflow created with agent-state-machine (native JS format).
+A workflow runner for building **linear, stateful agent workflows** in plain JavaScript.
 
-## Structure
+You write normal `async/await` code. The runtime handles:
+- **Auto-persisted** `memory` (saved to disk on mutation)
+- **Auto-tracked** `fileTree` (detects file changes made by agents via Git)
+- **Human-in-the-loop** blocking via `askHuman()` or agent-driven interactions
+- Local **JS agents** + **Markdown agents** (LLM-powered)
+- **Agent retries** with history logging for failures
 
-\`\`\`
-project-builder/
-├── workflow.js      # Native JS workflow (async/await)
-├── config.js        # Model/API key configuration
-├── package.json     # Sets "type": "module" for this workflow folder
-├── agents/          # Custom agents (.js/.mjs/.cjs or .md)
-├── interactions/    # Human-in-the-loop inputs (created at runtime)
-├── state/           # Runtime state (current.json, history.jsonl)
-└── steering/        # Steering configuration
-\`\`\`
+---
 
-## Usage
+## Install
 
-Edit `config.js` to set models and API keys for this workflow.
+You need to install the package **globally** to get the CLI, and **locally** in your project so your workflow can import the library.
 
-Run the workflow (or resume if interrupted):
-\`\`\`bash
-state-machine run project-builder
-\`\`\`
+### Global CLI
+Provides the `state-machine` command.
 
-Check status:
-\`\`\`bash
-state-machine status project-builder
-\`\`\`
+```bash
+# npm
+npm i -g agent-state-machine
 
-View history:
-\`\`\`bash
-state-machine history project-builder
-\`\`\`
+# pnpm
+pnpm add -g agent-state-machine
+```
 
-View trace logs in browser with live updates:
-\`\`\`bash
-state-machine follow project-builder
-\`\`\`
+### Local Library
+Required so your `workflow.js` can `import { agent, memory, fileTree } from 'agent-state-machine'`.
 
-Reset state (clears memory/state):
-\`\`\`bash
-state-machine reset project-builder
-\`\`\`
+```bash
+# npm
+npm i agent-state-machine
 
-Hard reset (clears everything: history/interactions/memory):
-\`\`\`bash
-state-machine reset-hard project-builder
-\`\`\`
+# pnpm (for monorepos/turbo, install in root)
+pnpm add agent-state-machine -w
+```
 
-## Writing Workflows
+Requirements: Node.js >= 16.
 
-Edit `workflow.js` - write normal async JavaScript:
+---
 
-\`\`\`js
+## CLI
+
+```bash
+state-machine --setup <workflow-name>
+state-machine --setup <workflow-name> --template <template-name>
+state-machine run <workflow-name>
+state-machine run <workflow-name> -reset
+state-machine run <workflow-name> -reset-hard
+
+state-machine -reset <workflow-name>
+state-machine -reset-hard <workflow-name>
+
+state-machine history <workflow-name> [limit]
+```
+
+Templates live in `templates/` and `starter` is used by default.
+
+Workflows live in:
+
+```text
+workflows/<name>/
+├── workflow.js        # Native JS workflow (async/await)
+├── config.js          # Model/API key configuration
+├── package.json       # Sets "type": "module" for this workflow folder
+├── agents/            # Custom agents (.js/.mjs/.cjs or .md)
+├── interactions/      # Human-in-the-loop files (auto-created)
+├── state/             # current.json, history.jsonl
+└── steering/          # global.md + config.json
+```
+
+---
+
+## Writing workflows (native JS)
+
+Edit `config.js` to set models and API keys for the workflow.
+
+```js
+/**
+/**
+ * project-builder Workflow
+ *
+ * Native JavaScript workflow - write normal async/await code!
+ *
+ * Features:
+ * - memory object auto-persists to disk (use memory guards for idempotency)
+ * - Use standard JS control flow (if, for, etc.)
+ * - Interactive prompts pause and wait for user input
+ */
+
 import { agent, memory, askHuman, parallel } from 'agent-state-machine';
+import { notify } from './scripts/mac-notification.js';
 
 export default async function() {
   console.log('Starting project-builder workflow...');
@@ -71,8 +108,8 @@ export default async function() {
 
   console.log('Example agent memory.userInfo:', memory.userInfo || userInfo);
 
-  // Context is provided automatically
-  const { greeting } = await agent('yoda-greeter', { userLocation });
+  // Context is explicit: pass what the agent needs
+  const { greeting } = await agent('yoda-greeter', { userLocation, memory });
   console.log('Example agent greeting:', greeting);
 
   // Or you can provide context manually
@@ -93,27 +130,238 @@ export default async function() {
 
   console.log('Workflow completed!');
 }
-\`\`\`
+```
 
-## Creating Agents
+### Resuming workflows
 
-**JavaScript agent** (`agents/my-agent.js`):
+`state-machine run` restarts your workflow from the top, loading the persisted state.
 
-\`\`\`js
+If the workflow needs human input, it will **block inline** in the terminal. You can answer in the terminal, edit `interactions/<slug>.md`, or respond in the browser.
+
+If the process is interrupted, running `state-machine run <workflow-name>` again will continue execution (assuming your workflow uses `memory` to skip completed steps).
+
+---
+
+## Core API
+
+### `agent(name, params?, options?)`
+
+Runs `workflows/<name>/agents/<agent>.(js|mjs|cjs)` or `<agent>.md`.
+
+```js
+const out = await agent('review', { file: 'src/app.js' });
+memory.lastReview = out;
+```
+
+Options:
+- `retry` (number | false): default `2` (3 total attempts). Use `false` to disable retries.
+- `steering` (string | string[]): extra steering files to load from `workflows/<name>/steering/`.
+
+Context is explicit: only `params` are provided to agents unless you pass additional data.
+
+### `memory`
+
+A persisted object for your workflow.
+
+- Mutations auto-save to `workflows/<name>/state/current.json`.
+- Use it as your "long-lived state" between runs.
+
+```js
+memory.count = (memory.count || 0) + 1;
+```
+
+### `fileTree`
+
+Auto-tracked file changes made by agents.
+
+- Before each `await agent(...)`, the runtime captures a Git baseline
+- After the agent completes, it detects created/modified/deleted files
+- Changes are stored in `memory.fileTree` and persisted to `current.json`
+
+```js
+// Files are auto-tracked when agents create them
+await agent('code-writer', { task: 'Create auth module' });
+
+// Access tracked files
+console.log(memory.fileTree);
+// { "src/auth.js": { status: "created", createdBy: "code-writer", ... } }
+
+// Pass file context to other agents
+await agent('code-reviewer', { fileTree: memory.fileTree });
+```
+
+Configuration in `config.js`:
+
+```js
+export const config = {
+  // ... models and apiKeys ...
+  projectRoot: process.env.PROJECT_ROOT,  // defaults to ../.. from workflow
+  fileTracking: true,                     // enable/disable (default: true)
+  fileTrackingIgnore: ['node_modules/**', '.git/**', 'dist/**'],
+  fileTrackingKeepDeleted: false          // keep deleted files in tree
+};
+```
+
+### `trackFile(path, options?)` / `untrackFile(path)`
+
+Manual file tracking utilities:
+
+```js
+import { trackFile, getFileTree, untrackFile } from 'agent-state-machine';
+
+trackFile('README.md', { caption: 'Project docs' });
+const tree = getFileTree();
+untrackFile('old-file.js');
+```
+
+### `askHuman(question, options?)`
+
+Gets user input.
+
+- In a TTY, it prompts in the terminal (or via the browser when remote follow is enabled).
+- Otherwise it creates `interactions/<slug>.md` and blocks until you confirm in the terminal (or respond in the browser).
+
+```js
+const repo = await askHuman('What repo should I work on?', { slug: 'repo' });
+memory.repo = repo;
+```
+
+### `parallel([...])` / `parallelLimit([...], limit)`
+
+Run multiple `agent()` calls concurrently:
+
+```js
+import { agent, parallel, parallelLimit } from 'agent-state-machine';
+
+const [a, b] = await parallel([
+  agent('review', { file: 'src/a.js' }),
+  agent('review', { file: 'src/b.js' }),
+]);
+
+const results = await parallelLimit(
+  ['a.js', 'b.js', 'c.js'].map(f => agent('review', { file: f })),
+  2
+);
+```
+
+---
+
+## Agents
+
+Agents live in `workflows/<workflow>/agents/`.
+
+### JavaScript agents
+
+**ESM (`.js` / `.mjs`)**:
+
+```js
+// workflows/<name>/agents/example.js
 import { llm } from 'agent-state-machine';
 
 export default async function handler(context) {
-  const response = await llm(context, { model: 'smart', prompt: 'Hello!' });
-  return { greeting: response.text };
+  // context includes:
+  // - params passed to agent(name, params)
+  // - context._steering (global + optional additional steering content)
+  // - context._config (models/apiKeys/workflowDir/projectRoot)
+
+  // Optionally return _files to annotate tracked files
+  return {
+    ok: true,
+    _files: [{ path: 'src/example.js', caption: 'Example module' }]
+  };
 }
-\`\`\`
+```
 
-**Markdown agent** (`agents/greeter.md`):
+**CommonJS (`.cjs`)** (only if you prefer CJS):
 
-\`\`\`md
+```js
+// workflows/<name>/agents/example.cjs
+async function handler(context) {
+  return { ok: true };
+}
+
+module.exports = handler;
+module.exports.handler = handler;
+```
+
+If you need to request human input from a JS agent, return an `_interaction` payload:
+
+```js
+return {
+  _interaction: {
+    slug: 'approval',
+    targetKey: 'approval',
+    content: 'Please approve this change (yes/no).'
+  }
+};
+```
+
+The runtime will block execution and wait for your response in the terminal.
+
+### Markdown agents (`.md`)
+
+Markdown agents are LLM-backed prompt templates with optional frontmatter.
+Frontmatter can include `steering` to load additional files from `workflows/<name>/steering/`.
+
+```md
 ---
-model: fast
+model: smart
 output: greeting
+steering: tone, product
 ---
-Generate a greeting for {{name}}.
-\`\`\`
+Generate a friendly greeting for {{name}}.
+```
+
+Calling it:
+
+```js
+const { greeting } = await agent('greeter', { name: 'Sam' });
+memory.greeting = greeting;
+```
+
+---
+
+## Models & LLM execution
+
+In your workflow’s `export const config = { models: { ... } }`, each model value can be:
+
+### CLI command
+
+```js
+export const config = {
+  models: {
+    smart: "claude -m claude-sonnet-4-20250514 -p"
+  }
+};
+```
+
+### API target
+
+Format: `api:<provider>:<model>`
+
+```js
+export const config = {
+  models: {
+    smart: "api:openai:gpt-4.1-mini"
+  },
+  apiKeys: {
+    openai: process.env.OPENAI_API_KEY
+  }
+};
+```
+
+The runtime captures the fully-built prompt in `state/history.jsonl`, viewable in the browser with live updates when running with the `--local` flag or via the remote URL. Remote follow links persist across runs (stored in `config.js`) unless you pass `-n`/`--new` to regenerate.
+
+---
+
+## State & persistence
+
+Native JS workflows persist to:
+
+- `workflows/<name>/state/current.json` — status, memory (includes fileTree), pending interaction
+- `workflows/<name>/state/history.jsonl` — event log (newest entries first, includes agent retry/failure entries)
+- `workflows/<name>/interactions/*.md` — human input files (when paused)
+
+## License
+
+MIT

@@ -12,8 +12,8 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-// Session TTL in seconds (30 minutes)
-const SESSION_TTL = 30 * 60;
+// Session TTL in seconds (24 hours - allows long periods of inactivity)
+const SESSION_TTL = 24 * 60 * 60;
 
 // Key prefixes
 const KEYS = {

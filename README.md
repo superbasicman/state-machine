@@ -4,6 +4,7 @@ A workflow runner for building **linear, stateful agent workflows** in plain Jav
 
 You write normal `async/await` code. The runtime handles:
 - **Auto-persisted** `memory` (saved to disk on mutation)
+- **Auto-tracked** `fileTree` (detects file changes made by agents via Git)
 - **Human-in-the-loop** blocking via `askHuman()` or agent-driven interactions
 - Local **JS agents** + **Markdown agents** (LLM-powered)
 - **Agent retries** with history logging for failures
@@ -26,7 +27,7 @@ pnpm add -g agent-state-machine
 ```
 
 ### Local Library
-Required so your `workflow.js` can `import { agent, memory } from 'agent-state-machine'`.
+Required so your `workflow.js` can `import { agent, memory, fileTree } from 'agent-state-machine'`.
 
 ```bash
 # npm
@@ -163,10 +164,54 @@ Context is explicit: only `params` are provided to agents unless you pass additi
 A persisted object for your workflow.
 
 - Mutations auto-save to `workflows/<name>/state/current.json`.
-- Use it as your “long-lived state” between runs.
+- Use it as your "long-lived state" between runs.
 
 ```js
 memory.count = (memory.count || 0) + 1;
+```
+
+### `fileTree`
+
+Auto-tracked file changes made by agents.
+
+- Before each `await agent(...)`, the runtime captures a Git baseline
+- After the agent completes, it detects created/modified/deleted files
+- Changes are stored in `memory.fileTree` and persisted to `current.json`
+
+```js
+// Files are auto-tracked when agents create them
+await agent('code-writer', { task: 'Create auth module' });
+
+// Access tracked files
+console.log(memory.fileTree);
+// { "src/auth.js": { status: "created", createdBy: "code-writer", ... } }
+
+// Pass file context to other agents
+await agent('code-reviewer', { fileTree: memory.fileTree });
+```
+
+Configuration in `config.js`:
+
+```js
+export const config = {
+  // ... models and apiKeys ...
+  projectRoot: process.env.PROJECT_ROOT,  // defaults to ../.. from workflow
+  fileTracking: true,                     // enable/disable (default: true)
+  fileTrackingIgnore: ['node_modules/**', '.git/**', 'dist/**'],
+  fileTrackingKeepDeleted: false          // keep deleted files in tree
+};
+```
+
+### `trackFile(path, options?)` / `untrackFile(path)`
+
+Manual file tracking utilities:
+
+```js
+import { trackFile, getFileTree, untrackFile } from 'agent-state-machine';
+
+trackFile('README.md', { caption: 'Project docs' });
+const tree = getFileTree();
+untrackFile('old-file.js');
 ```
 
 ### `askHuman(question, options?)`
@@ -217,8 +262,13 @@ export default async function handler(context) {
   // context includes:
   // - params passed to agent(name, params)
   // - context._steering (global + optional additional steering content)
-  // - context._config (models/apiKeys/workflowDir)
-  return { ok: true };
+  // - context._config (models/apiKeys/workflowDir/projectRoot)
+
+  // Optionally return _files to annotate tracked files
+  return {
+    ok: true,
+    _files: [{ path: 'src/example.js', caption: 'Example module' }]
+  };
 }
 ```
 
@@ -308,7 +358,7 @@ The runtime captures the fully-built prompt in `state/history.jsonl`, viewable i
 
 Native JS workflows persist to:
 
-- `workflows/<name>/state/current.json` — status, memory, pending interaction
+- `workflows/<name>/state/current.json` — status, memory (includes fileTree), pending interaction
 - `workflows/<name>/state/history.jsonl` — event log (newest entries first, includes agent retry/failure entries)
 - `workflows/<name>/interactions/*.md` — human input files (when paused)
 

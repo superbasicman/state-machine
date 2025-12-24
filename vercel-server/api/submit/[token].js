@@ -66,8 +66,8 @@ export default async function handler(req, res) {
       response,
     }));
 
-    // Set TTL on pending list
-    await redis.expire(pendingKey, 300); // 5 minutes
+    // Set TTL on pending list (24 hours - same as session, allows laptop sleep)
+    await redis.expire(pendingKey, 24 * 60 * 60);
 
     // Log event to events list (single source of truth for UI)
     await addEvent(token, {
