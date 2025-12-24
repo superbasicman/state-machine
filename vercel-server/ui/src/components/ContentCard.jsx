@@ -1,4 +1,16 @@
 import CopyButton from "./CopyButton.jsx";
+import { Bot, ChevronRight } from "lucide-react";
+
+function AgentStartedIcon({ className = "" }) {
+  return (
+    <div
+      className={`mx-auto w-14 h-14 rounded-full border border-black dark:border-white flex items-center justify-center ${className}`}
+      aria-hidden="true"
+    >
+      <Bot className="w-7 h-7" />
+    </div>
+  );
+}
 
 export default function ContentCard({ item }) {
   if (!item) return null;
@@ -38,6 +50,63 @@ export default function ContentCard({ item }) {
     }
 
     return null;
+  };
+
+  const estimateTokensFromText = (text) => {
+    const s = String(text ?? "").trim();
+    if (!s) return 0;
+    // Heuristic: ~1 token per ~4 characters (good-enough UI estimate).
+    return Math.max(1, Math.round(s.length / 4));
+  };
+
+  const formatTokenCount = (count) => {
+    if (!count) return "0 tokens";
+    if (count >= 1_000_000) {
+      const v = (count / 1_000_000).toFixed(1).replace(/\.0$/, "");
+      return `${v}M tokens`;
+    }
+    if (count >= 10_000) {
+      return `${Math.round(count / 1000)}k tokens`;
+    }
+    if (count >= 1000) {
+      const v = (count / 1000).toFixed(1).replace(/\.0$/, "");
+      return `${v}k tokens`;
+    }
+    return `${count} tokens`;
+  };
+
+  const extractContextFromPrompt = (promptText) => {
+    if (typeof promptText !== "string" || !promptText.trim()) {
+      return { cleanedPrompt: "", contextTitle: null, contextData: null, contextRaw: "" };
+    }
+
+    // Matches:
+    // "Context\n\n```json\n{...}\n```"
+    // "# Current Context\n\n```json\n{...}\n```"
+    // "## Context\n```json\n{...}\n```"
+    const re =
+      /(^|\n)(?:#+\s*)?(Current\s+)?Context\s*\n+```json\s*([\s\S]*?)\s*```/i;
+
+    const match = re.exec(promptText);
+    if (!match) {
+      return { cleanedPrompt: promptText, contextTitle: null, contextData: null, contextRaw: "" };
+    }
+
+    const contextTitle = match[2] ? "Current Context" : "Context";
+    const contextRaw = (match[3] || "").trim();
+    const parsed = tryParseJson(contextRaw);
+
+    const before = promptText.slice(0, match.index);
+    const after = promptText.slice(match.index + match[0].length);
+
+    const cleanedPrompt = `${before}\n\n${after}`.replace(/\n{3,}/g, "\n\n").trim();
+
+    return {
+      cleanedPrompt,
+      contextTitle,
+      contextData: parsed ?? contextRaw,
+      contextRaw,
+    };
   };
 
   const MonoBlock = ({ children }) => (
@@ -192,14 +261,47 @@ export default function ContentCard({ item }) {
   let content = null;
 
   if (item.event === "AGENT_STARTED") {
+    const { cleanedPrompt, contextTitle, contextData, contextRaw } = extractContextFromPrompt(
+      item.prompt || ""
+    );
+
+    const contextTokenCount = estimateTokensFromText(contextRaw || "");
+    const contextMeta = contextRaw ? `~${formatTokenCount(contextTokenCount)}` : "";
+
     content = (
       <div className="space-y-12 py-4">
-        <div className="space-y-3 text-center">
-          <h2 className="text-4xl font-black tracking-tight">{item.agent}</h2>
-          <div className="text-xs font-mono">{time}</div>
+        <div className="space-y-4 text-center">
+          <AgentStartedIcon />
+          <div className="space-y-2">
+            <h2 className="text-4xl font-black tracking-tight">{item.agent}</h2>
+            <div className="text-xs font-mono">{time}</div>
+          </div>
         </div>
+
+        {contextTitle && contextData !== null && (
+          <details className="group rounded-[24px] border border-black dark:border-white">
+            <summary className="cursor-pointer select-none px-6 py-5 flex items-center justify-between gap-6 [&::-webkit-details-marker]:hidden">
+              <div className="flex items-center gap-3">
+                <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                <div className="text-sm font-semibold tracking-[0.12em] uppercase">
+                  {contextTitle}
+                </div>
+              </div>
+              {contextMeta ? <div className="text-xs font-mono">{contextMeta}</div> : null}
+            </summary>
+
+            <div className="border-t border-black dark:border-white p-6">
+              {typeof contextData === "string" ? (
+                <MonoBlock>{contextData}</MonoBlock>
+              ) : (
+                renderStructured(contextData)
+              )}
+            </div>
+          </details>
+        )}
+
         <div className="markdown-body leading-relaxed text-xl font-light whitespace-pre-wrap [&_*]:text-inherit [&_a]:underline">
-          {item.prompt}
+          {cleanedPrompt}
         </div>
       </div>
     );
@@ -243,9 +345,7 @@ export default function ContentCard({ item }) {
           <div className="text-lg font-medium whitespace-pre-wrap">{item.prompt}</div>
         )}
 
-        {details.length > 0 && (
-          <div className="pt-4">{renderKeyValueGrid(details)}</div>
-        )}
+        {details.length > 0 && <div className="pt-4">{renderKeyValueGrid(details)}</div>}
       </div>
     );
   } else if (item.event === "PROMPT_ANSWERED" || item.event === "INTERACTION_SUBMITTED") {
@@ -264,9 +364,7 @@ export default function ContentCard({ item }) {
           {renderValue(responseValue)}
         </div>
 
-        {details.length > 0 && (
-          <div className="pt-4">{renderKeyValueGrid(details)}</div>
-        )}
+        {details.length > 0 && <div className="pt-4">{renderKeyValueGrid(details)}</div>}
       </div>
     );
   } else if (item.event === "AGENT_COMPLETED") {
@@ -295,9 +393,7 @@ export default function ContentCard({ item }) {
           </div>
         )}
 
-        {details.length > 0 && (
-          <div className="pt-4">{renderKeyValueGrid(details)}</div>
-        )}
+        {details.length > 0 && <div className="pt-4">{renderKeyValueGrid(details)}</div>}
       </div>
     );
   } else {
