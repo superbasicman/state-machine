@@ -3,6 +3,7 @@
 import path from 'path';
 import fs from 'fs';
 import readline from 'readline';
+import { spawn } from 'child_process';
 import { pathToFileURL, fileURLToPath } from 'url';
 import { WorkflowRuntime } from '../lib/index.js';
 import { setup } from '../lib/setup.js';
@@ -10,6 +11,41 @@ import { generateSessionToken } from '../lib/remote/client.js';
 import { readRemotePathFromConfig, writeRemotePathToConfig } from '../lib/config-utils.js';
 
 import { startLocalServer } from '../vercel-server/local-server.js';
+
+/**
+ * Prevent system sleep on macOS using caffeinate
+ * Returns a function to stop caffeinate, or null if not available
+ */
+function preventSleep() {
+  // Only works on macOS
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
+  try {
+    // -i: prevent idle sleep (system stays awake)
+    // -s: prevent sleep when on AC power
+    // Display can still sleep (screen goes black, requires password)
+    const caffeinate = spawn('caffeinate', ['-is'], {
+      stdio: 'ignore',
+      detached: false,
+    });
+
+    caffeinate.on('error', () => {
+      // caffeinate not available, ignore
+    });
+
+    return () => {
+      try {
+        caffeinate.kill();
+      } catch {
+        // Already dead, ignore
+      }
+    };
+  } catch {
+    return null;
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,9 +294,21 @@ async function runOrResume(
     await runtime.enableRemote(remoteUrl, { sessionToken, uiBaseUrl: useLocalServer });
   }
 
+  // Prevent system sleep while workflow runs (macOS only)
+  // Display can still sleep, but system stays awake for remote follow
+  const stopCaffeinate = preventSleep();
+  if (stopCaffeinate) {
+    console.log('☕ Preventing system sleep while workflow runs (display may still sleep)');
+  }
+
   try {
     await runtime.runWorkflow(workflowUrl);
   } finally {
+    // Allow sleep again
+    if (stopCaffeinate) {
+      stopCaffeinate();
+    }
+
     // Keep local server alive after run so the session remains accessible.
     if (!useLocalServer && remoteUrl) {
       await runtime.disableRemote();

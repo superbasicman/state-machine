@@ -21,7 +21,7 @@ import {
 export default async function handler(req, res) {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -34,6 +34,10 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     return handleGet(req, res);
+  }
+
+  if (req.method === 'DELETE') {
+    return handleDelete(req, res);
   }
 
   return res.status(405).json({ error: 'Method not allowed' });
@@ -161,12 +165,22 @@ async function handleGet(req, res) {
 
     // Poll every 5 seconds (10 calls per 50s timeout vs 50 calls before)
     while (Date.now() - startTime < timeoutMs) {
-      const pending = await redis.lpop(pendingKey);
+      // Peek at first item without removing (LINDEX 0)
+      // We only remove AFTER CLI confirms receipt via DELETE request
+      const pending = await redis.lindex(pendingKey, 0);
 
       if (pending) {
         const data = typeof pending === 'object' ? pending : JSON.parse(pending);
+
+        // Generate a receipt ID so CLI can confirm
+        const receiptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        // DON'T remove yet - CLI will confirm with DELETE request
+        // This prevents data loss if response doesn't reach CLI
+
         return res.status(200).json({
           type: 'interaction_response',
+          receiptId,
           ...data,
         });
       }
@@ -179,6 +193,30 @@ async function handleGet(req, res) {
     return res.status(204).end();
   } catch (err) {
     console.error('Error polling for interactions:', err);
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Handle DELETE requests - CLI confirms receipt of interaction
+ * This removes the interaction from the pending queue
+ */
+async function handleDelete(req, res) {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Missing token parameter' });
+  }
+
+  const channel = KEYS.interactions(token);
+  const pendingKey = `${channel}:pending`;
+
+  try {
+    // Remove the first item (the one we just sent)
+    await redis.lpop(pendingKey);
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Error confirming interaction receipt:', err);
     return res.status(500).json({ error: err.message });
   }
 }

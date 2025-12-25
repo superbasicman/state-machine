@@ -101,7 +101,7 @@ function sendJson(res, status, data) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   });
   res.end(JSON.stringify(data));
@@ -187,6 +187,7 @@ async function handleCliPost(req, res) {
 
 /**
  * Handle CLI GET (long-poll for interactions)
+ * Peeks at first item without removing - CLI confirms via DELETE
  */
 async function handleCliGet(req, res, query) {
   const { token, timeout = '30000' } = query;
@@ -207,7 +208,8 @@ async function handleCliGet(req, res, query) {
   const checkInterval = setInterval(() => {
     if (session.pendingInteractions.length > 0) {
       clearInterval(checkInterval);
-      const interaction = session.pendingInteractions.shift();
+      // Peek at first item WITHOUT removing - CLI will confirm via DELETE
+      const interaction = session.pendingInteractions[0];
       return sendJson(res, 200, {
         type: 'interaction_response',
         ...interaction,
@@ -225,6 +227,30 @@ async function handleCliGet(req, res, query) {
   req.on('close', () => {
     clearInterval(checkInterval);
   });
+}
+
+/**
+ * Handle CLI DELETE (confirm receipt of interaction)
+ * Removes the first pending interaction after CLI confirms receipt
+ */
+function handleCliDelete(req, res, query) {
+  const { token } = query;
+
+  if (!token) {
+    return sendJson(res, 400, { error: 'Missing token' });
+  }
+
+  const session = getSession(token);
+  if (!session) {
+    return sendJson(res, 404, { error: 'Session not found' });
+  }
+
+  // Remove the first pending interaction (the one we just sent)
+  if (session.pendingInteractions.length > 0) {
+    session.pendingInteractions.shift();
+  }
+
+  return sendJson(res, 200, { success: true });
 }
 
 /**
@@ -446,7 +472,7 @@ async function handleRequest(req, res) {
   if (req.method === 'OPTIONS') {
     res.writeHead(200, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     });
     return res.end();
@@ -459,6 +485,9 @@ async function handleRequest(req, res) {
     }
     if (req.method === 'GET') {
       return handleCliGet(req, res, query);
+    }
+    if (req.method === 'DELETE') {
+      return handleCliDelete(req, res, query);
     }
   }
 
