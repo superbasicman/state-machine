@@ -6,7 +6,9 @@ const DEFAULT_TIMEOUT_MS = 30000;
 
 export default async function sanityRunner(context) {
   const { checks = [], setup, teardown } = context;
-  const cwd = context?._config?.workflowDir || process.cwd();
+  const workflowDir = context?._config?.workflowDir || process.cwd();
+  const projectRoot = context?._config?.projectRoot || workflowDir;
+  const cwd = projectRoot;
   const results = [];
 
   let setupError = null;
