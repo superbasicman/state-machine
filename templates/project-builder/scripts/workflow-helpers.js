@@ -1,6 +1,39 @@
 import fs from 'fs';
 import path from 'path';
-import { memory } from 'agent-state-machine';
+import { memory, getCurrentRuntime } from 'agent-state-machine';
+
+// Write implementation files from code-writer agent output
+function writeImplementationFiles(implementation) {
+  const runtime = getCurrentRuntime();
+  if (!runtime) {
+    throw new Error('writeImplementationFiles must be called within a workflow context');
+  }
+
+  const projectRoot = runtime.workflowConfig.projectRoot;
+  const files = implementation?.implementation?.files || implementation?.files || [];
+  const written = [];
+
+  for (const file of files) {
+    if (!file.path || !file.code) {
+      console.warn(`  [File] Skipping invalid file entry: ${JSON.stringify(file)}`);
+      continue;
+    }
+
+    const fullPath = path.resolve(projectRoot, file.path);
+
+    // Ensure directory exists
+    const dir = path.dirname(fullPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    fs.writeFileSync(fullPath, file.code);
+    written.push(file.path);
+    console.log(`  [File] Created: ${file.path}`);
+  }
+
+  return written;
+}
 
 // Write markdown file to workflow state directory
 function writeMarkdownFile(stateDir, filename, content) {
@@ -111,6 +144,7 @@ function setTaskData(phaseIndex, taskId, dataKey, value) {
 
 export {
   writeMarkdownFile,
+  writeImplementationFiles,
   isApproval,
   renderRoadmapMarkdown,
   renderTasksMarkdown,

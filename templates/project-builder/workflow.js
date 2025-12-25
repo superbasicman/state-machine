@@ -13,6 +13,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   writeMarkdownFile,
+  writeImplementationFiles,
   isApproval,
   renderRoadmapMarkdown,
   renderTasksMarkdown,
@@ -334,6 +335,14 @@ export default async function () {
             });
             setTaskData(i, taskId, 'code', implementation);
           }
+
+          // Write implementation files to disk
+          const implementation = getTaskData(i, taskId, 'code');
+          if (implementation) {
+            console.log('    > Writing files to disk...');
+            writeImplementationFiles(implementation);
+          }
+
           setTaskStage(i, taskId, TASK_STAGES.CODE_REVIEW);
           stage = TASK_STAGES.CODE_REVIEW;
         }
