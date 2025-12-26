@@ -1,107 +1,19 @@
-Plan: Unknown Model Key Error Handler
+ i just created a project and ran it and it did not auto decide. 
 
- Goal
+ heres what i ran to create it: 
+ node bin/cli.js --setup demo -t project-builder 
+ 
+ and heres what i ran to run it:
+ node bin/cli.js run demo -l
 
- When an LLM call fails due to an unknown model key, show an interactive prompt (terminal + remote follow) that lets the user map the key to
-  an available model or enter a custom value, then save the mapping to config.js.
+ it looks like maybe scope-clarifier auto decided. but lets make sure all agents decide for us. lets also update so we decide like this: if project ran with -a flag, then we see a log at the start of the run in the cli that says workflow is in full auto mode or something. also when an interaction is needed we should keep the same behavior that we have when full auto mode is not active. but in the cli and remote follow we should show agent deciding for you in N seconds. the default should be 3 seconds. but it can be configured in workflows/<workflow-name>/config.js
 
- Implementation Steps
-
- Step 1: Create Config Utilities Module
-
- New file: /lib/config-utils.js
-
- Extract config manipulation utilities from cli.js into a shared module:
- - findConfigObjectRange(source) - find start/end of config object
- - readModelFromConfig(configFile, modelKey) - read a model mapping
- - writeModelToConfig(configFile, modelKey, modelValue) - add/update a model mapping
-
- Pattern based on existing writeRemotePathToConfig() at bin/cli.js:206-260.
-
- Step 2: Create Model Resolution Module
-
- New file: /lib/runtime/model-resolution.js
-
- Create the interaction handler:
- - buildModelSuggestions() - generate options based on detected CLI tools (claude, gemini, codex) + common API formats
- - promptForModelConfig(modelKey, existingModels) - show choice interaction with allowCustom: true
- - resolveUnknownModel(modelKey, config, workflowDir) - orchestrate prompt + save to config
-
- Uses existing askHuman() with interaction type choice.
-
- Step 3: Modify llm() to Support Model Resolution
-
- Modify: /lib/llm.js:424-429
-
- Instead of throwing immediately, check if runtime context is available:
- if (!modelConfig) {
-   const runtime = getCurrentRuntime();
-   if (runtime) {
-     // Interactive resolution
-     modelConfig = await resolveUnknownModel(options.model, config, workflowDir);
-     runtime.workflowConfig.models[options.model] = modelConfig;
-     context._config.models[options.model] = modelConfig;
-   } else {
-     // No runtime - throw standard error
-     throw new Error(`Unknown model key: "${options.model}"...`);
-   }
- }
-
- Step 4: Add Runtime Getter
-
- Modify: /lib/runtime/runtime.js
-
- Add getCurrentRuntime() export that returns the active runtime instance (for use by llm.js).
-
- Step 5: Update Exports
-
- Modify: /lib/index.js
-
- Export new utilities if needed for external use.
-
- Step 6: Refactor cli.js
-
- Modify: /bin/cli.js:122-269
-
- Replace local findConfigObjectRange and related functions with imports from /lib/config-utils.js.
-
- Files to Modify/Create
-
- | File                             | Action                                               |
- |----------------------------------|------------------------------------------------------|
- | /lib/config-utils.js             | Create - config file manipulation utilities          |
- | /lib/runtime/model-resolution.js | Create - model resolution interaction handler        |
- | /lib/llm.js                      | Modify - add model resolution logic at lines 424-429 |
- | /lib/runtime/runtime.js          | Modify - add getCurrentRuntime() export              |
- | /lib/index.js                    | Modify - add new exports                             |
- | /bin/cli.js                      | Refactor - use shared config utilities               |
-
- UI Integration (No Changes Needed)
-
- The existing ChoiceInteraction component already supports allowCustom: true (lines 89-112):
- - Shows model options as clickable cards
- - "Other" button reveals textarea for custom input
- - Returns { isCustom: true, customText: "..." } or { selectedKey: "..." }
-
- User Flow
-
- 1. Workflow runs agent with model: 'fast'
- 2. llm() detects fast not in config.models
- 3. Choice interaction appears:
- Unknown model key: "fast"
-
- How would you like to configure this model?
- Existing models: low, med, high
-
- [claude -p] Claude CLI with print mode
- [gemini] Gemini CLI
- [api:openai:gpt-4] OpenAI API
- [Other] Provide a custom response
- 4. User selects option or enters custom value
- 5. Mapping saved to config.js:
- models: {
-   low: "gemini",
-   fast: "claude -p",  // <-- added
- }
- 6. In-memory config updated, LLM call continues
- 7. Next run uses saved mapping without prompting
+ heres the logs in history.jsonl:
+ {"timestamp":"2025-12-26T07:40:42.777Z","event":"WORKFLOW_STOPPED","reason":"SIGINT"}
+{"timestamp":"2025-12-26T07:40:12.888Z","event":"INTERACTION_REQUESTED","slug":"req-features","targetKey":"req-features","type":"choice","prompt":"What are the core value propositions or features you'd like to highlight for 'Super Basic Finance'?","options":[{"key":"simplicity","label":"Radical Simplicity","description":"Focus on an ultra-clean interface with no complex charts or jargon."},{"key":"privacy","label":"Privacy First","description":"Highlight a 'no tracking' and 'no data collection' philosophy."},{"key":"speed","label":"Pure Speed","description":"Emphasis on lightning-fast transaction logging and immediate overviews."},{"key":"clarity","label":"High Clarity","description":"Zero distractions, showing only the numbers that actually matter."}],"allowCustom":true,"multiSelect":true}
+{"timestamp":"2025-12-26T07:39:53.921Z","event":"AGENT_STARTED","agent":"requirements-clarifier","prompt":"# Task\n\n\n# Requirements Clarifier Agent\n\nYou are a requirements analysis specialist. Your job is to gather and clarify functional and non-functional requirements.\n\n## Instructions\n\nBased on the project description and scope, identify requirements that need clarification. Consider:\n\n**Functional Requirements:**\n- Core features and user stories\n- Data models and relationships\n- User workflows and interactions\n\n**Non-Functional Requirements:**\n- Performance expectations\n- Scalability and reliability needs\n\nIf requirements need clarification, ask ONE question. Example slugs:\n- \"req-storage\": Data storage approach (local, cloud, hybrid)\n- \"req-auth\": Authentication method (none, basic, OAuth, MFA)\n- \"req-offline\": Offline capability needs\n- \"req-realtime\": Real-time features needed\n\nIf requirements are clear, return:\n\n{\n  \"requirements\": {\n    \"functional\": [\n      {\"id\": \"F1\", \"description\": \"...\", \"priority\": \"high\"},\n      {\"id\": \"F2\", \"description\": \"...\", \"priority\": \"medium\"}\n    ],\n    \"nonFunctional\": [\n      {\"id\": \"NF1\", \"description\": \"...\", \"category\": \"performance\"},\n      {\"id\": \"NF2\", \"description\": \"...\", \"category\": \"security\"}\n    ]\n  }\n}\n\nFocus on must-have requirements. Avoid scope creep.\n# Current Context\n\n```json\n\n{\n  \"projectDescription\": \"an spa react landing page of a minimalist personal finance app called \\\"super basic finance\\\", using only two colors: #000000 and #ffffff\",\n  \"scope\": {\n    \"scope\": {\n      \"inScope\": [\n        \"Single-page React application (SPA)\",\n        \"Responsive landing page layout\",\n        \"Sections: Hero with CTA, Value Proposition/Features, Footer\",\n        \"Strict Black (#000000) and White (#ffffff) design system\",\n        \"Mock 'Join Waitlist' functionality\"\n      ],\n      \"outOfScope\": [\n        \"Backend API development\",\n        \"Real database persistence\",\n        \"User authentication\",\n        \"Multiple pages/routing\"\n      ],\n      \"targetUsers\": \"Minimalists seeking a distraction-free personal finance tool\",\n      \"platform\": \"Web\",\n      \"constraints\": [\n        \"Color palette restricted strictly to #000000 and #ffffff (no grays)\",\n        \"High-contrast, minimalist aesthetic\",\n        \"Performance-focused (fast load times)\"\n      ]\n    }\n  }\n}\n\n```\n\n---\n\n# Response Format\n\nWhen you need user input, respond with a structured choice:\n\n{\n  \"interact\": {\n    \"type\": \"choice\",\n    \"slug\": \"unique-slug\",\n    \"prompt\": \"Your question here?\",\n    \"options\": [\n      { \"key\": \"key1\", \"label\": \"Display Label\", \"description\": \"Help text\" }\n    ],\n    \"multiSelect\": false,\n    \"allowCustom\": true\n  }\n}\n\nRules:\n- slug: unique identifier (e.g., \"scope-platform\")\n- options: 2-5 choices with key, label, and optional description\n- multiSelect: true allows selecting multiple options\n- allowCustom: true shows \"Other\" for free-text input\n- Ask ONE question at a time\n\n\n---\n\n# System Instructions\n\n# Global Steering Prompt\n\nThis content is included with every agent execution in the project-builder workflow.\n\n## Guidelines\n\n- Process data carefully and validate inputs\n- Return well-structured JSON when applicable\n- Log meaningful progress messages\n- Handle errors gracefully\n\n## Helpful Tips\n- Scripts live in /workflows/project-builder/scripts/\n- .gitignore includes /workflows so include ignored files when searching for a script and use `search_file_content` with the `no_ignore` flag to read the contents of script files.\n- Shell execution via `run_shell_command` is unavailable, so reproduce the script's intended side effect to fulfill the task.\n\n## Notes\n\nThis file is automatically loaded and passed to every agent in the workflow via `context._steering.global`.\n\n\n---\n\n# File Context\n\n\nYou are running from: /Users/isaacrobles/Documents/work/claude-state/workflows/demo\n\nProject root (where to create files): /Users/isaacrobles/Documents/work/claude-state\n\n\nWhen creating or modifying files, use paths relative to the project root.\n\nTo annotate files, include `_files` in your JSON response:\n\n```json\n\n{ \"_files\": [{ \"path\": \"src/file.js\", \"caption\": \"Brief description\" }] }\n\n```\n---\n"}
+{"timestamp":"2025-12-26T07:39:53.905Z","event":"AGENT_COMPLETED","agent":"scope-clarifier","output":{"scope":{"inScope":["Single-page React application (SPA)","Responsive landing page layout","Sections: Hero with CTA, Value Proposition/Features, Footer","Strict Black (#000000) and White (#ffffff) design system","Mock 'Join Waitlist' functionality"],"outOfScope":["Backend API development","Real database persistence","User authentication","Multiple pages/routing"],"targetUsers":"Minimalists seeking a distraction-free personal finance tool","platform":"Web","constraints":["Color palette restricted strictly to #000000 and #ffffff (no grays)","High-contrast, minimalist aesthetic","Performance-focused (fast load times)"]}},"attempts":1}
+{"timestamp":"2025-12-26T07:39:22.233Z","event":"AGENT_STARTED","agent":"scope-clarifier","prompt":"# Task\n\n\n# Scope Clarifier Agent\n\nYou are a project scope clarification specialist. Your job is to ensure the project scope is well-defined before development begins.\n\n## Instructions\n\nAnalyze the project description and determine if the scope is clear. Consider:\n- Project boundaries (what's in scope vs out of scope)\n- Target users/audience\n- Core functionality vs nice-to-haves\n- Platform/environment constraints\n- Integration requirements\n\nIf the scope is unclear, ask ONE clarifying question. Example slugs:\n- \"scope-platform\": Target platform (web, mobile, desktop, API)\n- \"scope-scale\": User scale (personal, team, enterprise)\n- \"scope-integrations\": External integrations needed\n\nIf the scope is sufficiently clear, return the scope summary:\n\n{\n  \"scope\": {\n    \"inScope\": [\"list\", \"of\", \"features\"],\n    \"outOfScope\": [\"explicitly\", \"excluded\", \"items\"],\n    \"targetUsers\": \"description of target users\",\n    \"platform\": \"target platform(s)\",\n    \"constraints\": [\"list\", \"of\", \"constraints\"]\n  }\n}\n\nBe concise. Ask only essential questions.\n# Current Context\n\n```json\n\n{\n  \"projectDescription\": \"an spa react landing page of a minimalist personal finance app called \\\"super basic finance\\\", using only two colors: #000000 and #ffffff\"\n}\n\n```\n\n---\n\n# Response Format\n\nWhen you need user input, respond with a structured choice:\n\n{\n  \"interact\": {\n    \"type\": \"choice\",\n    \"slug\": \"unique-slug\",\n    \"prompt\": \"Your question here?\",\n    \"options\": [\n      { \"key\": \"key1\", \"label\": \"Display Label\", \"description\": \"Help text\" }\n    ],\n    \"multiSelect\": false,\n    \"allowCustom\": true\n  }\n}\n\nRules:\n- slug: unique identifier (e.g., \"scope-platform\")\n- options: 2-5 choices with key, label, and optional description\n- multiSelect: true allows selecting multiple options\n- allowCustom: true shows \"Other\" for free-text input\n- Ask ONE question at a time\n\n\n---\n\n# System Instructions\n\n# Global Steering Prompt\n\nThis content is included with every agent execution in the project-builder workflow.\n\n## Guidelines\n\n- Process data carefully and validate inputs\n- Return well-structured JSON when applicable\n- Log meaningful progress messages\n- Handle errors gracefully\n\n## Helpful Tips\n- Scripts live in /workflows/project-builder/scripts/\n- .gitignore includes /workflows so include ignored files when searching for a script and use `search_file_content` with the `no_ignore` flag to read the contents of script files.\n- Shell execution via `run_shell_command` is unavailable, so reproduce the script's intended side effect to fulfill the task.\n\n## Notes\n\nThis file is automatically loaded and passed to every agent in the workflow via `context._steering.global`.\n\n\n---\n\n# File Context\n\n\nYou are running from: /Users/isaacrobles/Documents/work/claude-state/workflows/demo\n\nProject root (where to create files): /Users/isaacrobles/Documents/work/claude-state\n\n\nWhen creating or modifying files, use paths relative to the project root.\n\nTo annotate files, include `_files` in your JSON response:\n\n```json\n\n{ \"_files\": [{ \"path\": \"src/file.js\", \"caption\": \"Brief description\" }] }\n\n```\n---\n"}
+{"timestamp":"2025-12-26T07:39:22.176Z","event":"PROMPT_ANSWERED","slug":"project-description","answer":"an spa react landing page of a minimalist personal finance app called \"super basic finance\", using o..."}
+{"timestamp":"2025-12-26T07:38:04.226Z","event":"PROMPT_REQUESTED","slug":"project-description","targetKey":"_interaction_project-description","type":"text","prompt":"Describe the project you want to build. Include any initial requirements, goals, or constraints you have in mind.","options":[],"allowCustom":true,"multiSelect":false,"placeholder":"A web app that...","validation":{"minLength":20,"maxLength":0,"pattern":""},"confirmLabel":"Confirm","cancelLabel":"Cancel","context":{}}
+{"timestamp":"2025-12-26T07:38:04.223Z","event":"WORKFLOW_STARTED"}

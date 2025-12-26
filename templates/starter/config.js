@@ -1,6 +1,6 @@
 export const config = {
   models: {
-    low: "gemini",
+    low: "gemini -m gemini-2.5-flash-lite",
     med: "codex --model gpt-5.2",
     high: "claude -m claude-opus-4-20250514 -p",
   },

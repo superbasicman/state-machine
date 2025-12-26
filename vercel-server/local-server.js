@@ -342,30 +342,11 @@ async function handleSubmitPost(req, res, token) {
     return sendJson(res, 400, { error: 'Missing slug or response' });
   }
 
-  const responseString = typeof response === 'string' ? response : JSON.stringify(response);
-
   // Add to pending interactions for CLI to pick up
   session.pendingInteractions.push({
     slug,
     targetKey: targetKey || `_interaction_${slug}`,
     response,
-  });
-
-  // Log to history (include answer preview)
-  const event = {
-    timestamp: new Date().toISOString(),
-    event: 'INTERACTION_SUBMITTED',
-    slug,
-    targetKey: targetKey || `_interaction_${slug}`,
-    answer: responseString.substring(0, 200) + (responseString.length > 200 ? '...' : ''),
-    source: 'remote',
-  };
-  session.history.unshift(event);
-
-  // Broadcast to browsers
-  broadcastToSession(token, {
-    type: 'event',
-    ...event,
   });
 
   return sendJson(res, 200, { success: true });

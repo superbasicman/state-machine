@@ -8,7 +8,7 @@
  * 4. Task lifecycle with optimal agent sequencing
  */
 
-import { agent, memory, askHuman } from 'agent-state-machine';
+import { agent, memory, askHuman, getCurrentRuntime } from 'agent-state-machine';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -21,7 +21,12 @@ import {
   getTaskStage,
   setTaskStage,
   getTaskData,
-  setTaskData
+  setTaskData,
+  clearPartialTaskData,
+  getQuickFixAttempts,
+  incrementQuickFixAttempts,
+  resetQuickFixAttempts,
+  detectTestFramework
 } from './scripts/workflow-helpers.js';
 import {
   createInteraction,
@@ -34,6 +39,57 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const WORKFLOW_DIR = __dirname;
 const STATE_DIR = path.join(WORKFLOW_DIR, 'state');
+
+// ANSI Colors for console output
+const C = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  cyan: '\x1b[36m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m'
+};
+
+function applyFixesToImplementation(originalImplementation, fixes) {
+  if (!originalImplementation || !Array.isArray(fixes) || fixes.length === 0) {
+    return originalImplementation;
+  }
+
+  const updated = { ...originalImplementation };
+  const container = updated.implementation ? { ...updated.implementation } : updated;
+  const files = Array.isArray(container.files) ? [...container.files] : [];
+
+  for (const fix of fixes) {
+    if (!fix?.path || !fix?.code) {
+      console.warn(`  [Fix] Skipping invalid fix entry: ${JSON.stringify(fix)}`);
+      continue;
+    }
+    if (fix.operation && fix.operation !== 'replace') {
+      console.warn(`  [Fix] Unsupported operation "${fix.operation}" for ${fix.path}`);
+      continue;
+    }
+
+    const existingIndex = files.findIndex((file) => file.path === fix.path);
+    const nextFile = {
+      ...(existingIndex >= 0 ? files[existingIndex] : {}),
+      path: fix.path,
+      code: fix.code,
+      purpose: fix.purpose || (existingIndex >= 0 ? files[existingIndex].purpose : 'Updated by code-fixer')
+    };
+
+    if (existingIndex >= 0) {
+      files[existingIndex] = nextFile;
+    } else {
+      files.push(nextFile);
+    }
+  }
+
+  if (updated.implementation) {
+    updated.implementation = { ...container, files };
+    return updated;
+  }
+
+  return { ...updated, files };
+}
 
 // ============================================
 // MAIN WORKFLOW
@@ -382,10 +438,12 @@ export default async function () {
 
         // 6. Sanity check generation & execution
         if (stage === TASK_STAGES.SANITY_CHECK) {
+          const testFramework = detectTestFramework();
           const executableChecks = await agent('sanity-checker', {
             task: task,
             implementation: getTaskData(i, taskId, 'code'),
-            testPlan: getTaskData(i, taskId, 'tests')
+            testPlan: getTaskData(i, taskId, 'tests'),
+            testFramework
           });
           setTaskData(i, taskId, 'sanity_checks', executableChecks);
 
@@ -396,8 +454,8 @@ export default async function () {
           const sanityChoice = createInteraction('choice', `phase-${i + 1}-task-${taskId}-sanity-choice`, {
             prompt: `Sanity checks for "${task.title}":\n\n${checksDisplay}\n\nHow would you like to proceed?`,
             options: [
-              { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
               { key: 'auto', label: 'Run automatically', description: 'Agent executes checks and reports results' },
+              { key: 'manual', label: 'Run checks manually', description: 'You run the commands and confirm results' },
               { key: 'skip', label: 'Skip verification', description: 'Approve without running checks' }
             ],
             allowCustom: true
@@ -411,6 +469,7 @@ export default async function () {
 
           if (sanityResponse.isCustom) {
             setTaskData(i, taskId, 'feedback', sanityResponse.customText || sanityResponse.raw || sanityRaw);
+            resetQuickFixAttempts(i, taskId);
             setTaskStage(i, taskId, TASK_STAGES.PENDING);
             t--;
             continue;
@@ -432,12 +491,26 @@ export default async function () {
                 .map((r) => `  - Check ${r.id}: ${r.error}`)
                 .join('\n');
 
+              const quickFixAttempts = getQuickFixAttempts(i, taskId);
+              const runtime = getCurrentRuntime();
+              const maxAttempts = runtime?.workflowConfig?.maxQuickFixAttempts ?? 10;
+              const failOptions = [];
+              if (quickFixAttempts < maxAttempts) {
+                failOptions.push({
+                  key: 'quickfix',
+                  label: 'Quick fix',
+                  description: `Run targeted fixes (attempt ${quickFixAttempts + 1} of ${maxAttempts})`
+                });
+              }
+              failOptions.push(
+                { key: 'partial', label: 'Partial reimplement', description: 'Keep security review and test plan, redo implementation' },
+                { key: 'reimplement', label: 'Full reimplement', description: 'Restart task from scratch' },
+                { key: 'ignore', label: 'Ignore failures and approve anyway' }
+              );
+
               const failChoice = createInteraction('choice', `phase-${i + 1}-task-${taskId}-sanity-fail`, {
                 prompt: `${results.summary.failed} sanity check(s) failed:\n\n${failedChecks}\n\nHow would you like to proceed?`,
-                options: [
-                  { key: 'reimplement', label: 'Re-implement task with this feedback' },
-                  { key: 'ignore', label: 'Ignore failures and approve anyway' }
-                ],
+                options: failOptions,
                 allowCustom: true
               });
 
@@ -447,19 +520,71 @@ export default async function () {
               });
               const failResponse = await parseResponse(failChoice, failRaw);
 
-              if (failResponse.selectedKey === 'reimplement' || failResponse.isCustom) {
+              if (failResponse.isCustom) {
+                const customFeedback = failResponse.customText || failResponse.text || failResponse.raw || failRaw;
+                const combinedFeedback = `${customFeedback}\n\nSanity check failures:\n${failedChecks}`;
+                setTaskData(i, taskId, 'feedback', combinedFeedback);
+                clearPartialTaskData(i, taskId);
+                resetQuickFixAttempts(i, taskId);
+                setTaskStage(i, taskId, TASK_STAGES.PENDING);
+                t--;
+                continue;
+              }
+
+              if (failResponse.selectedKey === 'quickfix') {
+                console.log('    > Running quick fix...');
+                const fixerResult = await agent('code-fixer', {
+                  task: task,
+                  originalImplementation: getTaskData(i, taskId, 'code'),
+                  sanityCheckResults: {
+                    summary: results.summary,
+                    results: results.results,
+                    checks: executableChecks.checks
+                  },
+                  testPlan: getTaskData(i, taskId, 'tests'),
+                  previousAttempts: quickFixAttempts
+                });
+
+                const fixes = fixerResult?.fixes || [];
+                const fixFiles = fixes
+                  .filter((fix) => fix?.path && fix?.code && (!fix.operation || fix.operation === 'replace'))
+                  .map((fix) => ({ path: fix.path, code: fix.code }));
+
+                if (fixFiles.length > 0) {
+                  console.log('    > Applying fixes to disk...');
+                  writeImplementationFiles({ files: fixFiles });
+                }
+
+                const updatedImplementation = applyFixesToImplementation(getTaskData(i, taskId, 'code'), fixes);
+                setTaskData(i, taskId, 'code', updatedImplementation);
+                incrementQuickFixAttempts(i, taskId);
+                setTaskData(i, taskId, 'sanity_checks', null);
+                setTaskData(i, taskId, 'sanity_results', null);
+                setTaskStage(i, taskId, TASK_STAGES.SANITY_CHECK);
+                t--;
+                continue;
+              }
+
+              if (failResponse.selectedKey === 'partial') {
                 setTaskData(i, taskId, 'feedback', `Sanity check failures:\n${failedChecks}`);
-                setTaskData(i, taskId, 'security_pre', null);
-                setTaskData(i, taskId, 'tests', null);
-                setTaskData(i, taskId, 'code', null);
-                setTaskData(i, taskId, 'review', null);
-                setTaskData(i, taskId, 'security_post', null);
+                clearPartialTaskData(i, taskId, ['security_pre', 'tests']);
+                resetQuickFixAttempts(i, taskId);
+                setTaskStage(i, taskId, TASK_STAGES.IMPLEMENTING);
+                t--;
+                continue;
+              }
+
+              if (failResponse.selectedKey === 'reimplement') {
+                setTaskData(i, taskId, 'feedback', `Sanity check failures:\n${failedChecks}`);
+                clearPartialTaskData(i, taskId);
+                resetQuickFixAttempts(i, taskId);
                 setTaskStage(i, taskId, TASK_STAGES.PENDING);
                 t--;
                 continue;
               }
             }
 
+            resetQuickFixAttempts(i, taskId);
             setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
             stage = TASK_STAGES.COMPLETED;
             task.stage = 'completed';
@@ -467,6 +592,7 @@ export default async function () {
             writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, tasks));
             console.log(`    Task ${t + 1} confirmed complete!\n`);
           } else if (action === 'skip') {
+            resetQuickFixAttempts(i, taskId);
             setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
             stage = TASK_STAGES.COMPLETED;
             task.stage = 'completed';
@@ -498,6 +624,7 @@ export default async function () {
 
           if (approvalResponse.selectedKey === 'approve' || isApproval(approvalResponse.raw || approvalRaw)) {
             setTaskStage(i, taskId, TASK_STAGES.COMPLETED);
+            resetQuickFixAttempts(i, taskId);
             task.stage = 'completed';
             memory[tasksKey] = tasks;
             writeMarkdownFile(STATE_DIR, `phase-${i + 1}-tasks.md`, renderTasksMarkdown(i + 1, phase.title, tasks));
@@ -514,6 +641,7 @@ export default async function () {
             setTaskData(i, taskId, 'security_post', null);
             setTaskData(i, taskId, 'sanity_checks', null);
             setTaskData(i, taskId, 'sanity_results', null);
+            resetQuickFixAttempts(i, taskId);
 
             setTaskStage(i, taskId, TASK_STAGES.PENDING);
             t--;

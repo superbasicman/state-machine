@@ -27,6 +27,9 @@ Implement the task following these principles:
 - Implement to satisfy the test plan
 - Ensure all test cases can pass
 - Consider edge cases identified in testing
+- Write runnable test files, not just descriptions
+- Use appropriate test locations (e.g. *.test.js, *.spec.js, __tests__/)
+- Tests must import and exercise real implementation functions
 
 ## Output Format
 

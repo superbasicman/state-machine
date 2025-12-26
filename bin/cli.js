@@ -97,6 +97,8 @@ Options:
   --template, -t  Template name for --setup (default: starter)
   --local, -l     Use local server instead of remote (starts on localhost:3000)
   --new, -n       Generate a new remote follow path
+  --full-auto, -a Auto-select first option for choice interactions (no blocking)
+  --delay, -d     Seconds to wait before auto-select in full-auto mode (default: 20)
   -reset          Reset workflow state before running
   -reset-hard     Hard reset workflow before running
   --help, -h      Show help
@@ -238,7 +240,9 @@ async function runOrResume(
     useLocalServer = false,
     forceNewRemotePath = false,
     preReset = false,
-    preResetHard = false
+    preResetHard = false,
+    fullAuto = false,
+    autoSelectDelay = null
   } = {}
 ) {
   const workflowDir = resolveWorkflowDir(workflowName);
@@ -292,6 +296,16 @@ async function runOrResume(
   if (remoteUrl) {
     const sessionToken = ensureRemotePath(configFile, { forceNew: forceNewRemotePath });
     await runtime.enableRemote(remoteUrl, { sessionToken, uiBaseUrl: useLocalServer });
+  }
+
+  // Set full-auto mode from CLI flag (will be merged with config.js during runWorkflow)
+  if (fullAuto) {
+    runtime.workflowConfig.fullAuto = true;
+    if (autoSelectDelay !== null) {
+      runtime.workflowConfig.autoSelectDelay = autoSelectDelay;
+    }
+    const delay = runtime.workflowConfig.autoSelectDelay;
+    console.log(`\n\x1b[36m\x1b[1m⚡ Full-auto mode enabled\x1b[0m - Agent will auto-select recommended options after ${delay}s countdown`);
   }
 
   // Prevent system sleep while workflow runs (macOS only)
@@ -370,14 +384,28 @@ async function main() {
         const forceNewRemotePath = args.includes('--new') || args.includes('-n');
         const preReset = args.includes('-reset');
         const preResetHard = args.includes('-reset-hard');
+        const fullAuto = args.includes('--full-auto') || args.includes('-a');
         const remoteEnabled = !useLocalServer; // Use Vercel if not local
+
+        // Parse --delay or -d flag
+        let autoSelectDelay = null;
+        const delayFlagIndex = args.findIndex((arg) => arg === '--delay' || arg === '-d');
+        if (delayFlagIndex !== -1 && args[delayFlagIndex + 1]) {
+          const delayValue = parseInt(args[delayFlagIndex + 1], 10);
+          if (!isNaN(delayValue) && delayValue >= 0) {
+            autoSelectDelay = delayValue;
+          }
+        }
+
         try {
           await runOrResume(workflowName, {
             remoteEnabled,
             useLocalServer,
             forceNewRemotePath,
             preReset,
-            preResetHard
+            preResetHard,
+            fullAuto,
+            autoSelectDelay
           });
         } catch (err) {
           console.error('Error:', err.message || String(err));

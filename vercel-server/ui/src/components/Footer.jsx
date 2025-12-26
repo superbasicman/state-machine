@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest, className = "" }) {
+export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest, className = "", leftSlot = null }) {
   const [inputValue, setInputValue] = useState(page + 1);
   useEffect(() => setInputValue(page + 1), [page]);
 
@@ -16,11 +16,16 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
 
   return (
     <footer className={`nav-footer transition-opacity duration-300 ${className}`}>
+      {leftSlot ? (
+        <div className="fixed bottom-6 left-2 sm:left-4 z-40">
+          {leftSlot}
+        </div>
+      ) : null}
       <div className="footer-control">
         <button
           onClick={onPrev}
           disabled={page === 0}
-          className="tooltip p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          className="tooltip p-1 hover:text-black dark:hover:text-white disabled:opacity-0 transition-all pointer-events-auto"
           data-tooltip="Previous"
           aria-label="Previous event"
         >
@@ -43,7 +48,7 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
         <button
           onClick={onNext}
           disabled={page === total - 1}
-          className="tooltip p-1 hover:text-accent disabled:opacity-0 transition-all pointer-events-auto"
+          className="tooltip p-1 hover:text-black dark:hover:text-white disabled:opacity-0 transition-all pointer-events-auto"
           data-tooltip="Next"
           aria-label="Next event"
         >
@@ -53,7 +58,7 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
         {hasNew ? (
           <button
             onClick={onJumpToLatest}
-            className="tooltip px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-accent text-white shadow-[0_10px_30px_rgba(0,122,255,0.25)] hover:scale-[1.02] transition-transform"
+            className="tooltip px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.2em] uppercase bg-black text-white dark:bg-white dark:text-black shadow-[0_10px_30px_rgba(0,0,0,0.2)] dark:shadow-[0_10px_30px_rgba(255,255,255,0.1)] hover:scale-[1.02] transition-transform"
             data-tooltip="Latest"
             aria-label="Jump to latest event"
           >

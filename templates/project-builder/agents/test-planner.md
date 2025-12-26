@@ -22,6 +22,7 @@ Create a comprehensive test plan for the task. Include:
 - Cover happy path and error cases
 - Include tests for security concerns flagged in review
 - Prioritize tests by risk and importance
+- Provide expected test file paths for planned tests
 
 ## Output Format
 
@@ -59,7 +60,8 @@ Return a valid JSON object:
         "scenario": "Empty input handling",
         "expectedBehavior": "Return validation error"
       }
-    ]
+    ],
+    "testFilePaths": ["src/feature.test.js"]
   },
   "testingNotes": "Any special considerations or setup needed"
 }

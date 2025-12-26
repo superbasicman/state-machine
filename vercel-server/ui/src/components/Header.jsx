@@ -3,10 +3,19 @@ import CopyButton from "./CopyButton.jsx";
 
 export default function Header({ workflowName, status, theme, toggleTheme, viewMode, setViewMode, history }) {
   return (
-    <header className="fixed top-0 inset-x-0 h-20 px-12 flex items-center justify-between z-50 bg-bg/80 backdrop-blur-3xl">
+    <header className="fixed top-0 inset-x-0 h-20 px-6 sm:px-10 lg:px-12 flex items-center justify-between z-50 bg-bg/80 backdrop-blur-3xl">
       <div className="flex items-center gap-4">
-        <div className={`w-2 h-2 rounded-full ${status === "connected" ? "bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.6)]" : "bg-red-500"}`}></div>
-        <span className="font-bold text-[10px] tracking-[0.4em] uppercase opacity-30 truncate max-w-[300px]">{workflowName || "Workflow"}</span>
+        <div
+          className={`w-2.5 h-2.5 rounded-full border ${
+            status === "connected"
+              ? "bg-black border-black dark:bg-white dark:border-white"
+              : "bg-transparent border-black/30 dark:border-white/30"
+          }`}
+          aria-hidden="true"
+        />
+        <span className="font-semibold text-[10px] tracking-[0.32em] uppercase text-black/50 dark:text-white/50 truncate max-w-[300px]">
+          {workflowName || "Workflow"}
+        </span>
       </div>
 
       <div className="flex items-center gap-2">

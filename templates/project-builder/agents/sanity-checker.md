@@ -9,6 +9,7 @@ Input:
 - task: { title, description, doneDefinition, sanityCheck }
 - implementation: code-writer output
 - testPlan: test-planner output
+- testFramework: { framework, command }
 
 Return JSON only in this shape:
 {
@@ -34,6 +35,8 @@ Guidelines:
 - If the task describes a server endpoint, include a curl check.
 - Keep checks short, clear, and runnable.
 - Include at least one file_exists or file_contains check when files are created/modified.
+- If tests exist (from testPlan or implementation), include a type "test_suite" check.
+- Use testFramework.command for running tests (optionally target specific files when possible).
 
 Task:
 {{task}}
@@ -43,3 +46,6 @@ Implementation:
 
 Test Plan:
 {{testPlan}}
+
+Test Framework:
+{{testFramework}}

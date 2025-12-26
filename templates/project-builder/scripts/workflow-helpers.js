@@ -142,6 +142,69 @@ function setTaskData(phaseIndex, taskId, dataKey, value) {
   memory[key] = value;
 }
 
+function clearPartialTaskData(phaseIndex, taskId, keepKeys = []) {
+  const allKeys = [
+    'security_pre',
+    'tests',
+    'code',
+    'review',
+    'security_post',
+    'sanity_checks',
+    'sanity_results'
+  ];
+  for (const key of allKeys) {
+    if (!keepKeys.includes(key)) {
+      setTaskData(phaseIndex, taskId, key, null);
+    }
+  }
+}
+
+function getQuickFixAttempts(phaseIndex, taskId) {
+  return getTaskData(phaseIndex, taskId, 'quick_fix_attempts') || 0;
+}
+
+function incrementQuickFixAttempts(phaseIndex, taskId) {
+  const current = getQuickFixAttempts(phaseIndex, taskId);
+  setTaskData(phaseIndex, taskId, 'quick_fix_attempts', current + 1);
+}
+
+function resetQuickFixAttempts(phaseIndex, taskId) {
+  setTaskData(phaseIndex, taskId, 'quick_fix_attempts', 0);
+}
+
+function detectTestFramework() {
+  const runtime = getCurrentRuntime();
+  const projectRoot = runtime?.workflowConfig?.projectRoot || process.cwd();
+  const pkgPath = path.join(projectRoot, 'package.json');
+
+  if (!fs.existsSync(pkgPath)) {
+    return { framework: 'vitest', command: 'npx vitest run', isDefault: true };
+  }
+
+  let pkg;
+  try {
+    pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+  } catch (error) {
+    console.warn(`  [Test] Failed to parse package.json: ${error.message}`);
+    return { framework: 'vitest', command: 'npx vitest run', isDefault: true };
+  }
+
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  const testScript = pkg.scripts?.test || '';
+
+  if (testScript.includes('vitest') || deps.vitest) {
+    return { framework: 'vitest', command: 'npm test' };
+  }
+  if (testScript.includes('jest') || deps.jest) {
+    return { framework: 'jest', command: 'npm test' };
+  }
+  if (testScript.includes('mocha') || deps.mocha) {
+    return { framework: 'mocha', command: 'npm test' };
+  }
+
+  return { framework: 'vitest', command: 'npx vitest run', isDefault: true };
+}
+
 export {
   writeMarkdownFile,
   writeImplementationFiles,
@@ -152,5 +215,10 @@ export {
   getTaskStage,
   setTaskStage,
   getTaskData,
-  setTaskData
+  setTaskData,
+  clearPartialTaskData,
+  getQuickFixAttempts,
+  incrementQuickFixAttempts,
+  resetQuickFixAttempts,
+  detectTestFramework
 };

@@ -35,14 +35,14 @@ export default function TextInteraction({ interaction, onSubmit, disabled }) {
     <div className="w-full h-full flex flex-col items-stretch overflow-hidden">
       <div className="flex-1 overflow-y-auto custom-scroll px-6 py-12 space-y-8 flex flex-col items-center">
         <div className="space-y-4 shrink-0">
-          <div className="w-16 h-16 rounded-3xl bg-accent text-white flex items-center justify-center mx-auto shadow-2xl shadow-accent/40">
+          <div className="w-16 h-16 rounded-3xl bg-black text-white dark:bg-white dark:text-black flex items-center justify-center mx-auto shadow-2xl shadow-black/20 dark:shadow-white/10">
             <Bot className="w-8 h-8" />
           </div>
-          <h3 className="text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Action required.</h3>
+          <h3 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-fg pt-4 text-center">Action required.</h3>
         </div>
 
         <div className="w-full max-w-2xl space-y-4">
-          <div className="text-xl font-medium text-fg/70 text-center whitespace-pre-wrap">
+          <div className="text-lg sm:text-xl font-medium text-fg/70 text-center whitespace-pre-wrap break-words">
             {prompt || question || "Provide your response."}
           </div>
           <textarea
@@ -50,15 +50,15 @@ export default function TextInteraction({ interaction, onSubmit, disabled }) {
             onChange={(event) => { setText(event.target.value); setError(null); }}
             disabled={disabled}
             placeholder={placeholder || "Your response..."}
-            className={`w-full h-64 p-8 rounded-[32px] bg-black/[0.03] dark:bg-white/[0.03] border-2 ${
-              error ? "border-red-500" : "border-transparent"
-            } focus:ring-4 focus:ring-accent/10 focus:outline-none text-2xl font-medium transition-all text-center placeholder:opacity-20`}
+            className={`w-full h-64 p-8 rounded-[32px] bg-black/[0.02] dark:bg-white/[0.03] border-2 ${
+              error ? "border-black dark:border-white" : "border-transparent"
+            } focus:border-black dark:focus:border-white focus:outline-none text-xl sm:text-2xl font-medium transition-all text-center placeholder:opacity-20`}
           />
-          {error && <div className="text-red-500 text-center text-sm">{error}</div>}
+          {error && <div className="text-black dark:text-white text-center text-sm font-semibold">{error}</div>}
         </div>
       </div>
 
-      <div className="p-4 flex justify-center bg-gradient-to-t from-bg via-bg to-transparent shrink-0 border-t border-white/5">
+      <div className="p-4 flex justify-center bg-gradient-to-t from-bg via-bg to-transparent shrink-0 border-t border-black/10 dark:border-white/10">
         <button
           onClick={handleSubmit}
           disabled={disabled || !text.trim()}

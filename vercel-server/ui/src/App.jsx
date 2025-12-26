@@ -5,6 +5,8 @@ import EventsLog from "./components/EventsLog.jsx";
 import Footer from "./components/Footer.jsx";
 import Header from "./components/Header.jsx";
 import InteractionForm from "./components/InteractionForm.jsx";
+import SendingCard from "./components/SendingCard.jsx";
+import { Search } from "lucide-react";
 
 export default function App() {
   const [history, setHistory] = useState([]);
@@ -15,6 +17,8 @@ export default function App() {
   const [viewMode, setViewMode] = useState("present");
   const [pendingInteraction, setPendingInteraction] = useState(null);
   const [hasNew, setHasNew] = useState(false);
+  const [sendingState, setSendingState] = useState(null);
+  const [promptSearchRequestId, setPromptSearchRequestId] = useState(0);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -77,6 +81,32 @@ export default function App() {
   }, [history.length, pageIndex]);
 
   useEffect(() => {
+    if (!sendingState || history.length === 0) return;
+    const latest = history[history.length - 1];
+    const hasNewEvent =
+      history.length !== sendingState.historyLength ||
+      (latest?.timestamp && latest.timestamp !== sendingState.lastEventTimestamp);
+
+    if (!hasNewEvent) return;
+
+    if (latest?.event === "INTERACTION_SUBMITTED") {
+      setSendingState((prev) =>
+        prev
+          ? {
+              ...prev,
+              historyLength: history.length,
+              lastEventTimestamp: latest?.timestamp || prev.lastEventTimestamp,
+            }
+          : prev
+      );
+      return;
+    }
+
+    setSendingState(null);
+    setPageIndex(history.length - 1);
+  }, [history, sendingState]);
+
+  useEffect(() => {
     if (pageIndex === history.length - 1) {
       setHasNew(false);
     }
@@ -110,8 +140,10 @@ export default function App() {
   }, [history.length]);
 
   const currentItem = history[pageIndex];
+  const isAgentStarted = currentItem?.event === "AGENT_STARTED";
   const isRequestEvent = currentItem && (currentItem.event === "INTERACTION_REQUESTED" || currentItem.event === "PROMPT_REQUESTED");
   const isRequest = pendingInteraction && isRequestEvent && currentItem.slug === pendingInteraction.slug;
+  const isSending = Boolean(sendingState);
 
   return (
     <div className="w-full h-[100dvh] flex flex-col relative overflow-hidden bg-bg">
@@ -144,34 +176,40 @@ export default function App() {
             transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="w-full h-full"
           >
-            {isRequest ? (
+            {isSending ? (
+              <SendingCard submission={sendingState} />
+            ) : isRequest ? (
               <div className="content-width h-full">
                 <InteractionForm
                   interaction={pendingInteraction}
                   onSubmit={async (slug, targetKey, response) => {
-                    const responsePreview = typeof response === "string" ? response : JSON.stringify(response);
-                    setHistory((prev) => [
-                      ...prev,
-                      {
-                        timestamp: new Date().toISOString(),
-                        event: "INTERACTION_SUBMITTED",
-                        answer: responsePreview,
-                        response
-                      }
-                    ]);
-                    setPageIndex((prev) => prev + 1);
-                    await fetch(submitUrl, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ slug, targetKey, response })
+                    const lastEvent = history[history.length - 1];
+                    setSendingState({
+                      slug,
+                      targetKey,
+                      historyLength: history.length,
+                      lastEventTimestamp: lastEvent?.timestamp || null,
                     });
-                    setTimeout(fetchData, 1000);
+                    try {
+                      const res = await fetch(submitUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ slug, targetKey, response })
+                      });
+                      if (!res.ok) {
+                        throw new Error(`Submit failed with ${res.status}`);
+                      }
+                    } catch (error) {
+                      setSendingState(null);
+                    } finally {
+                      setTimeout(fetchData, 1000);
+                    }
                   }}
-                  disabled={status === "disconnected"}
+                  disabled={status === "disconnected" || isSending}
                 />
               </div>
             ) : (
-              <ContentCard item={currentItem} />
+              <ContentCard item={currentItem} promptSearchRequestId={promptSearchRequestId} />
             )}
           </motion.div>
         </AnimatePresence>
@@ -187,6 +225,18 @@ export default function App() {
         hasNew={hasNew}
         onJumpToLatest={() => setPageIndex(history.length - 1)}
         className={viewMode === "log" ? "opacity-0 pointer-events-none" : "opacity-100"}
+        leftSlot={
+          isAgentStarted ? (
+            <button
+              type="button"
+              onClick={() => setPromptSearchRequestId((prev) => prev + 1)}
+              className="w-12 h-12 rounded-full bg-white text-black dark:bg-black dark:text-white border border-black/10 dark:border-white/10 flex items-center justify-center shadow-2xl shadow-black/20 dark:shadow-white/10 hover:scale-[1.02] transition-transform"
+              aria-label="Search prompt sections"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+          ) : null
+        }
       />
     </div>
   );
