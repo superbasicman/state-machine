@@ -143,7 +143,7 @@ function renderJsonWithHighlight(value) {
   return nodes;
 }
 
-export default function ContentCard({ item, promptSearchRequestId = 0 }) {
+export default function ContentCard({ item }) {
   if (!item) return null;
 
   const time = new Date(item.timestamp).toLocaleTimeString([], {
@@ -486,12 +486,6 @@ export default function ContentCard({ item, promptSearchRequestId = 0 }) {
   }
 
   let content = null;
-
-  useEffect(() => {
-    if (promptSearchRequestId > 0) {
-      setShowPromptSearch(true);
-    }
-  }, [promptSearchRequestId]);
 
   if (item.event === "AGENT_STARTED") {
     const { cleanedPrompt, contextTitle, contextData, contextRaw } = extractContextFromPrompt(
@@ -906,11 +900,25 @@ export default function ContentCard({ item, promptSearchRequestId = 0 }) {
     <div className="w-full h-full flex flex-col overflow-y-auto custom-scroll px-6 sm:px-10 lg:px-12 bg-white text-black dark:bg-black dark:text-white">
       <div className="content-width flex-1">
         <div className="flex flex-wrap items-center justify-between gap-4 pt-8 sm:pt-10 pb-6 border-b border-black/10 dark:border-white/10">
-          <div className="text-xs font-mono text-black/50 dark:text-white/50">{time}</div>
+          <div className="flex items-center gap-3">
+            {item.event === "AGENT_STARTED" ? (
+              <button
+                type="button"
+                onClick={() => setShowPromptSearch(true)}
+                className="w-12 h-12 rounded-full bg-white text-black dark:bg-black dark:text-white border border-black/10 dark:border-white/10 flex items-center justify-center shadow-2xl shadow-black/20 dark:shadow-white/10 hover:scale-[1.02] transition-transform"
+                aria-label="Search prompt sections"
+              >
+                <Search className="w-5 h-5" />
+              </button>
+            ) : null}
+          </div>
           <div className="flex items-center gap-3">
             <RawToggle open={showRaw} onToggle={() => setShowRaw((prev) => !prev)} />
             <CopyButton text={item} />
           </div>
+        </div>
+        <div className="pt-6">
+          <div className="text-xs font-mono text-black/50 dark:text-white/50">{time}</div>
         </div>
         {showRaw ? (
           <pre className="raw-json-block">{renderJsonWithHighlight(item)}</pre>

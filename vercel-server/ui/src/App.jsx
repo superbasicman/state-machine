@@ -6,7 +6,6 @@ import Footer from "./components/Footer.jsx";
 import Header from "./components/Header.jsx";
 import InteractionForm from "./components/InteractionForm.jsx";
 import SendingCard from "./components/SendingCard.jsx";
-import { Search } from "lucide-react";
 
 export default function App() {
   const [history, setHistory] = useState([]);
@@ -18,7 +17,6 @@ export default function App() {
   const [pendingInteraction, setPendingInteraction] = useState(null);
   const [hasNew, setHasNew] = useState(false);
   const [sendingState, setSendingState] = useState(null);
-  const [promptSearchRequestId, setPromptSearchRequestId] = useState(0);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -140,7 +138,6 @@ export default function App() {
   }, [history.length]);
 
   const currentItem = history[pageIndex];
-  const isAgentStarted = currentItem?.event === "AGENT_STARTED";
   const isRequestEvent = currentItem && (currentItem.event === "INTERACTION_REQUESTED" || currentItem.event === "PROMPT_REQUESTED");
   const isRequest = pendingInteraction && isRequestEvent && currentItem.slug === pendingInteraction.slug;
   const isSending = Boolean(sendingState);
@@ -209,7 +206,7 @@ export default function App() {
                 />
               </div>
             ) : (
-              <ContentCard item={currentItem} promptSearchRequestId={promptSearchRequestId} />
+              <ContentCard item={currentItem} />
             )}
           </motion.div>
         </AnimatePresence>
@@ -225,18 +222,6 @@ export default function App() {
         hasNew={hasNew}
         onJumpToLatest={() => setPageIndex(history.length - 1)}
         className={viewMode === "log" ? "opacity-0 pointer-events-none" : "opacity-100"}
-        leftSlot={
-          isAgentStarted ? (
-            <button
-              type="button"
-              onClick={() => setPromptSearchRequestId((prev) => prev + 1)}
-              className="w-12 h-12 rounded-full bg-white text-black dark:bg-black dark:text-white border border-black/10 dark:border-white/10 flex items-center justify-center shadow-2xl shadow-black/20 dark:shadow-white/10 hover:scale-[1.02] transition-transform"
-              aria-label="Search prompt sections"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-          ) : null
-        }
       />
     </div>
   );

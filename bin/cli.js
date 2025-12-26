@@ -108,7 +108,7 @@ Environment Variables:
   STATE_MACHINE_REMOTE_URL    Override the default remote server URL (for local dev testing)
 
 Workflow Structure:
-  workflows/<name>/
+  .workflows/<name>/
   ├── workflow.js        # Native JS workflow (async/await)
   ├── config.js          # Model/API key configuration
   ├── package.json       # Sets "type": "module" for this workflow folder
@@ -142,7 +142,7 @@ async function confirmHardReset(workflowName) {
 }
 
 function workflowsRoot() {
-  return path.join(process.cwd(), 'workflows');
+  return path.join(process.cwd(), '.workflows');
 }
 
 function resolveWorkflowDir(workflowName) {
@@ -194,7 +194,7 @@ function listWorkflows() {
   const root = workflowsRoot();
 
   if (!fs.existsSync(root)) {
-    console.log('No workflows directory found.');
+    console.log('No .workflows directory found.');
     console.log('Run `state-machine --setup <name>` to create your first workflow.');
     return;
   }
