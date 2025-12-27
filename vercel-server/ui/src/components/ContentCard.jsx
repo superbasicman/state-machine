@@ -613,8 +613,8 @@ export default function ContentCard({ item, pageIndex = 0, history = [] }) {
       : [];
     const promptCountLabel = promptSections.length ? `${promptSections.length} sections` : null;
 
-    const contextTokenCount = estimateTokensFromText(contextRaw || "");
-    const contextMeta = contextRaw ? `~${formatTokenCount(contextTokenCount)}` : "";
+    const promptTokenCount = estimateTokensFromText(item.prompt || "");
+    const promptMeta = item.prompt ? `~${formatTokenCount(promptTokenCount)}` : "";
 
     content = (
       <div className="space-y-10 py-6">
@@ -651,7 +651,7 @@ export default function ContentCard({ item, pageIndex = 0, history = [] }) {
                   {contextTitle}
                 </div>
               </div>
-              {contextMeta ? <div className="text-xs font-mono text-black/50 dark:text-white/50">{contextMeta}</div> : null}
+              {promptMeta ? <div className="text-xs font-mono text-black/50 dark:text-white/50">{promptMeta}</div> : null}
             </summary>
 
             {typeof contextData === "string" ? (
@@ -1232,16 +1232,16 @@ export default function ContentCard({ item, pageIndex = 0, history = [] }) {
                           <div className="text-xs text-black/40 dark:text-white/40">Output</div>
                           <div className="font-mono font-semibold">{agent.outputTokens.toLocaleString()}</div>
                         </div>
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-black/40 dark:text-white/40">Total</div>
+                          <div className="font-mono font-semibold">{(agent.inputTokens + agent.outputTokens).toLocaleString()}</div>
+                        </div>
                         {agent.cachedTokens > 0 && (
                           <div className="space-y-0.5">
                             <div className="text-xs text-black/40 dark:text-white/40">Cached</div>
                             <div className="font-mono font-semibold text-black/60 dark:text-white/60">{agent.cachedTokens.toLocaleString()}</div>
                           </div>
                         )}
-                        <div className="space-y-0.5">
-                          <div className="text-xs text-black/40 dark:text-white/40">Total</div>
-                          <div className="font-mono font-semibold">{(agent.inputTokens + agent.outputTokens).toLocaleString()}</div>
-                        </div>
                       </div>
                     </div>
                   ))}

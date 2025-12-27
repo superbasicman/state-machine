@@ -96,11 +96,20 @@ export default function SettingsModal({
           </div>
           <input
             type="number"
-            value={autoSelectDelay}
-            onChange={(e) => {
-              const val = parseInt(e.target.value, 10);
+            value={localDelay}
+            onChange={(e) => setLocalDelay(e.target.value)}
+            onBlur={() => {
+              const val = parseInt(localDelay, 10);
               if (!isNaN(val) && val >= 1 && val <= 120) {
                 onDelayChange(val);
+              } else {
+                // Reset to current valid value if invalid
+                setLocalDelay(String(autoSelectDelay));
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.target.blur();
               }
             }}
             min={1}
