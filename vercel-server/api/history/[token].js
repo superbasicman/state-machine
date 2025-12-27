@@ -42,6 +42,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       workflowName: session.workflowName,
       cliConnected: session.cliConnected,
+      config: session.config || { fullAuto: false, autoSelectDelay: 20 },
       entries,
     });
   } catch (err) {

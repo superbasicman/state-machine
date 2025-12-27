@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
-export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest, className = "", leftSlot = null }) {
+export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, onJumpToLatest, className = "" }) {
   const [inputValue, setInputValue] = useState(page + 1);
   useEffect(() => setInputValue(page + 1), [page]);
 
@@ -16,11 +16,6 @@ export default function Footer({ page, total, onNext, onPrev, onJump, hasNew, on
 
   return (
     <footer className={`nav-footer transition-opacity duration-300 ${className}`}>
-      {leftSlot ? (
-        <div className="fixed bottom-6 left-2 sm:left-4 z-40">
-          {leftSlot}
-        </div>
-      ) : null}
       <div className="footer-control">
         <button
           onClick={onPrev}

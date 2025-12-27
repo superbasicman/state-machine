@@ -1,9 +1,9 @@
 export const config = {
   models: {
-    fast: "gemini -m gemini-2.5-flash-lite",
-    low: "gemini -m gemini-2.5-flash-lite",
-    med: "gemini -m gemini-2.5-flash-lite",
-    high: "gemini -m gemini-2.5-flash-lite",
+    fast: "gemini -m gemini-2.5-pro",
+    low: "gemini -m gemini-2.5-pro",
+    med: "gemini -m gemini-2.5-pro",
+    high: "gemini -m gemini-2.5-pro",
   },
   apiKeys: {
     gemini: process.env.GEMINI_API_KEY,

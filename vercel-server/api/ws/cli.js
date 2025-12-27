@@ -14,6 +14,8 @@ import {
   setCLIConnected,
   addEvent,
   setEvents,
+  peekConfigUpdate,
+  popConfigUpdate,
   redis,
   KEYS,
 } from '../../lib/redis.js';
@@ -59,10 +61,14 @@ async function handlePost(req, res) {
   try {
     switch (action) {
       case 'session_init': {
-        const { workflowName, history } = body;
+        const { workflowName, history, config } = body;
 
-        // Create session
-        await createSession(sessionToken, { workflowName, cliConnected: true });
+        // Create session with initial config
+        await createSession(sessionToken, {
+          workflowName,
+          cliConnected: true,
+          config: config || null,
+        });
 
         // Replace events with the provided history snapshot (single source of truth)
         await setEvents(sessionToken, history || []);
@@ -140,7 +146,7 @@ async function handlePost(req, res) {
 }
 
 /**
- * Handle GET requests - long-poll for interaction responses
+ * Handle GET requests - long-poll for interaction responses and config updates
  * Uses efficient polling with 5-second intervals (Upstash doesn't support BLPOP)
  */
 async function handleGet(req, res) {
@@ -165,8 +171,7 @@ async function handleGet(req, res) {
 
     // Poll every 5 seconds (10 calls per 50s timeout vs 50 calls before)
     while (Date.now() - startTime < timeoutMs) {
-      // Peek at first item without removing (LINDEX 0)
-      // We only remove AFTER CLI confirms receipt via DELETE request
+      // Check for pending interactions first (higher priority)
       const pending = await redis.lindex(pendingKey, 0);
 
       if (pending) {
@@ -175,9 +180,6 @@ async function handleGet(req, res) {
         // Generate a receipt ID so CLI can confirm
         const receiptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-        // DON'T remove yet - CLI will confirm with DELETE request
-        // This prevents data loss if response doesn't reach CLI
-
         return res.status(200).json({
           type: 'interaction_response',
           receiptId,
@@ -185,11 +187,24 @@ async function handleGet(req, res) {
         });
       }
 
-      // Wait 5 seconds before checking again (was 1 second)
+      // Check for pending config updates
+      const configUpdate = await peekConfigUpdate(token);
+
+      if (configUpdate) {
+        const receiptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        return res.status(200).json({
+          type: 'config_update',
+          receiptId,
+          ...configUpdate,
+        });
+      }
+
+      // Wait 5 seconds before checking again
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
 
-    // Timeout - no interaction received
+    // Timeout - no interaction or config update received
     return res.status(204).end();
   } catch (err) {
     console.error('Error polling for interactions:', err);
@@ -198,25 +213,29 @@ async function handleGet(req, res) {
 }
 
 /**
- * Handle DELETE requests - CLI confirms receipt of interaction
- * This removes the interaction from the pending queue
+ * Handle DELETE requests - CLI confirms receipt of interaction or config update
+ * This removes the item from the pending queue
  */
 async function handleDelete(req, res) {
-  const { token } = req.query;
+  const { token, type = 'interaction' } = req.query;
 
   if (!token) {
     return res.status(400).json({ error: 'Missing token parameter' });
   }
 
-  const channel = KEYS.interactions(token);
-  const pendingKey = `${channel}:pending`;
-
   try {
-    // Remove the first item (the one we just sent)
-    await redis.lpop(pendingKey);
+    if (type === 'config') {
+      // Remove pending config update
+      await popConfigUpdate(token);
+    } else {
+      // Remove pending interaction (default)
+      const channel = KEYS.interactions(token);
+      const pendingKey = `${channel}:pending`;
+      await redis.lpop(pendingKey);
+    }
     return res.status(200).json({ success: true });
   } catch (err) {
-    console.error('Error confirming interaction receipt:', err);
+    console.error('Error confirming receipt:', err);
     return res.status(500).json({ error: err.message });
   }
 }

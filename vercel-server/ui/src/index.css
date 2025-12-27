@@ -199,6 +199,59 @@ body {
   color: rgba(0, 0, 0, 0.45);
 }
 
+@keyframes check-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes check-draw {
+  0% {
+    stroke-dashoffset: 30;
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes ring-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.checkmark-pop {
+  animation: check-pop 0.45s ease-out both;
+}
+
+.checkmark-draw {
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: check-draw 0.65s ease-out 0.15s forwards;
+}
+
+.success-ring {
+  animation: ring-pop 0.8s ease-out both;
+}
+
 .dark .json-token-key {
   color: rgba(255, 255, 255, 0.8);
 }

@@ -42,6 +42,8 @@ function createSession(token, data) {
     cliConnected: true,
     history: data.history || [],
     pendingInteractions: [],
+    pendingConfigUpdates: [],
+    config: data.config || { fullAuto: false, autoSelectDelay: 20 },
     createdAt: Date.now(),
   };
   sessions.set(token, session);
@@ -60,6 +62,23 @@ function broadcastToSession(token, event) {
   for (const client of clients) {
     try {
       client.write(`data: ${data}\n\n`);
+    } catch (e) {
+      clients.delete(client);
+    }
+  }
+}
+
+/**
+ * Broadcast "update" to trigger browser refetch
+ * The browser SSE handler listens for this string to call fetchData()
+ */
+function broadcastUpdate(token) {
+  const clients = sseClients.get(token);
+  if (!clients) return;
+
+  for (const client of clients) {
+    try {
+      client.write('data: update\n\n');
     } catch (e) {
       clients.delete(client);
     }
@@ -122,8 +141,8 @@ async function handleCliPost(req, res) {
 
   switch (action) {
     case 'session_init': {
-      const { workflowName, history } = body;
-      createSession(sessionToken, { workflowName, history });
+      const { workflowName, history, config } = body;
+      createSession(sessionToken, { workflowName, history, config });
 
       broadcastToSession(sessionToken, {
         type: 'cli_connected',
@@ -137,6 +156,9 @@ async function handleCliPost(req, res) {
           entries: history,
         });
       }
+
+      // Trigger browser refetch to pick up config and latest state
+      broadcastUpdate(sessionToken);
 
       return sendJson(res, 200, { success: true });
     }
@@ -186,7 +208,7 @@ async function handleCliPost(req, res) {
 }
 
 /**
- * Handle CLI GET (long-poll for interactions)
+ * Handle CLI GET (long-poll for interactions and config updates)
  * Peeks at first item without removing - CLI confirms via DELETE
  */
 async function handleCliGet(req, res, query) {
@@ -204,15 +226,25 @@ async function handleCliGet(req, res, query) {
   const timeoutMs = Math.min(parseInt(timeout, 10), 55000);
   const startTime = Date.now();
 
-  // Poll for pending interactions
+  // Poll for pending interactions and config updates
   const checkInterval = setInterval(() => {
+    // Check interactions first (higher priority)
     if (session.pendingInteractions.length > 0) {
       clearInterval(checkInterval);
-      // Peek at first item WITHOUT removing - CLI will confirm via DELETE
       const interaction = session.pendingInteractions[0];
       return sendJson(res, 200, {
         type: 'interaction_response',
         ...interaction,
+      });
+    }
+
+    // Check config updates
+    if (session.pendingConfigUpdates && session.pendingConfigUpdates.length > 0) {
+      clearInterval(checkInterval);
+      const configUpdate = session.pendingConfigUpdates[0];
+      return sendJson(res, 200, {
+        type: 'config_update',
+        ...configUpdate,
       });
     }
 
@@ -230,11 +262,11 @@ async function handleCliGet(req, res, query) {
 }
 
 /**
- * Handle CLI DELETE (confirm receipt of interaction)
- * Removes the first pending interaction after CLI confirms receipt
+ * Handle CLI DELETE (confirm receipt of interaction or config update)
+ * Removes the first pending item after CLI confirms receipt
  */
 function handleCliDelete(req, res, query) {
-  const { token } = query;
+  const { token, type = 'interaction' } = query;
 
   if (!token) {
     return sendJson(res, 400, { error: 'Missing token' });
@@ -245,9 +277,16 @@ function handleCliDelete(req, res, query) {
     return sendJson(res, 404, { error: 'Session not found' });
   }
 
-  // Remove the first pending interaction (the one we just sent)
-  if (session.pendingInteractions.length > 0) {
-    session.pendingInteractions.shift();
+  if (type === 'config') {
+    // Remove the first pending config update
+    if (session.pendingConfigUpdates && session.pendingConfigUpdates.length > 0) {
+      session.pendingConfigUpdates.shift();
+    }
+  } else {
+    // Remove the first pending interaction (default)
+    if (session.pendingInteractions.length > 0) {
+      session.pendingInteractions.shift();
+    }
   }
 
   return sendJson(res, 200, { success: true });
@@ -318,6 +357,7 @@ function handleHistoryGet(res, token) {
   return sendJson(res, 200, {
     workflowName: session.workflowName,
     cliConnected: session.cliConnected,
+    config: session.config || { fullAuto: false, autoSelectDelay: 20 },
     entries: session.history,
   });
 }
@@ -348,6 +388,47 @@ async function handleSubmitPost(req, res, token) {
     targetKey: targetKey || `_interaction_${slug}`,
     response,
   });
+
+  return sendJson(res, 200, { success: true });
+}
+
+/**
+ * Handle config update POST from browser
+ */
+async function handleConfigPost(req, res, token) {
+  const session = getSession(token);
+  if (!session) {
+    return sendJson(res, 404, { error: 'Session not found' });
+  }
+
+  if (!session.cliConnected) {
+    return sendJson(res, 503, { error: 'CLI is disconnected' });
+  }
+
+  const body = await parseBody(req);
+  const { fullAuto, autoSelectDelay, stop } = body;
+
+  // Build config update object
+  const configUpdate = {};
+  if (fullAuto !== undefined) configUpdate.fullAuto = fullAuto;
+  if (autoSelectDelay !== undefined) configUpdate.autoSelectDelay = autoSelectDelay;
+  if (stop !== undefined) configUpdate.stop = stop;
+
+  if (Object.keys(configUpdate).length === 0) {
+    return sendJson(res, 400, { error: 'No config fields provided' });
+  }
+
+  // Add to pending config updates for CLI to pick up
+  if (!session.pendingConfigUpdates) {
+    session.pendingConfigUpdates = [];
+  }
+  session.pendingConfigUpdates.push(configUpdate);
+
+  // Update session config (except stop which is transient)
+  if (!stop) {
+    if (fullAuto !== undefined) session.config.fullAuto = fullAuto;
+    if (autoSelectDelay !== undefined) session.config.autoSelectDelay = autoSelectDelay;
+  }
 
   return sendJson(res, 200, { success: true });
 }
@@ -494,6 +575,12 @@ async function handleRequest(req, res) {
   const submitMatch = pathname.match(/^\/api\/submit\/([^/]+)$/);
   if (submitMatch && req.method === 'POST') {
     return handleSubmitPost(req, res, submitMatch[1]);
+  }
+
+  // Route: Config
+  const configMatch = pathname.match(/^\/api\/config\/([^/]+)$/);
+  if (configMatch && req.method === 'POST') {
+    return handleConfigPost(req, res, configMatch[1]);
   }
 
   // Route: Static files

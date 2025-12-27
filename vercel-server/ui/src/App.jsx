@@ -6,6 +6,7 @@ import Footer from "./components/Footer.jsx";
 import Header from "./components/Header.jsx";
 import InteractionForm from "./components/InteractionForm.jsx";
 import SendingCard from "./components/SendingCard.jsx";
+import SettingsModal from "./components/SettingsModal.jsx";
 
 export default function App() {
   const [history, setHistory] = useState([]);
@@ -17,6 +18,8 @@ export default function App() {
   const [pendingInteraction, setPendingInteraction] = useState(null);
   const [hasNew, setHasNew] = useState(false);
   const [sendingState, setSendingState] = useState(null);
+  const [config, setConfig] = useState({ fullAuto: false, autoSelectDelay: 20 });
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem("rf_theme") || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -38,6 +41,7 @@ export default function App() {
   const historyUrl = token ? `/api/history/${token}` : "/api/history";
   const eventsUrl = token ? `/api/events/${token}` : "/api/events";
   const submitUrl = token ? `/api/submit/${token}` : "/api/submit";
+  const configUrl = token ? `/api/config/${token}` : "/api/config";
 
   const fetchData = async () => {
     try {
@@ -59,9 +63,25 @@ export default function App() {
         }
       }
       if (data.workflowName) setWorkflowName(data.workflowName);
+      if (data.config) setConfig(data.config);
       setStatus("connected");
     } catch (error) {
       setStatus("disconnected");
+    }
+  };
+
+  const updateConfig = async (updates) => {
+    try {
+      const res = await fetch(configUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        setConfig((prev) => ({ ...prev, ...updates }));
+      }
+    } catch (err) {
+      console.error("Failed to update config:", err);
     }
   };
 
@@ -152,6 +172,10 @@ export default function App() {
         viewMode={viewMode}
         setViewMode={setViewMode}
         history={history}
+        fullAuto={config.fullAuto}
+        onToggleFullAuto={() => updateConfig({ fullAuto: !config.fullAuto })}
+        onOpenSettings={() => setSettingsOpen(true)}
+        configDisabled={status !== "connected"}
       />
 
       <main className="main-stage overflow-hidden">
@@ -206,7 +230,7 @@ export default function App() {
                 />
               </div>
             ) : (
-              <ContentCard item={currentItem} />
+              <ContentCard item={currentItem} pageIndex={pageIndex} history={history} />
             )}
           </motion.div>
         </AnimatePresence>
@@ -222,6 +246,17 @@ export default function App() {
         hasNew={hasNew}
         onJumpToLatest={() => setPageIndex(history.length - 1)}
         className={viewMode === "log" ? "opacity-0 pointer-events-none" : "opacity-100"}
+      />
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        fullAuto={config.fullAuto}
+        onToggleFullAuto={() => updateConfig({ fullAuto: !config.fullAuto })}
+        autoSelectDelay={config.autoSelectDelay}
+        onDelayChange={(delay) => updateConfig({ autoSelectDelay: delay })}
+        onStop={() => updateConfig({ stop: true })}
+        disabled={status !== "connected"}
       />
     </div>
   );

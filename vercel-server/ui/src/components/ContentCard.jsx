@@ -1,8 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CopyButton from "./CopyButton.jsx";
-import { Bot, Brain, ChevronRight, Search, X } from "lucide-react";
+import { Bot, Brain, ChevronDown, ChevronRight, Search, X } from "lucide-react";
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Format model string for display - extracts model ID from various formats
+const formatModelName = (model) => {
+  if (!model) return null;
+  // Handle api:provider:model format (e.g., "api:google:gemini-2.5-pro" -> "gemini-2.5-pro")
+  if (model.startsWith("api:")) {
+    const parts = model.split(":");
+    return parts.length >= 3 ? parts.slice(2).join(":") : model;
+  }
+  // Handle CLI commands with -m/--model flag (e.g., "gemini -m gemini-2.5-flash-lite" -> "gemini-2.5-flash-lite")
+  if (model.includes(" ")) {
+    const parts = model.split(/\s+/);
+    const mIndex = parts.findIndex(p => p === "-m" || p === "--model");
+    if (mIndex !== -1 && parts[mIndex + 1]) {
+      return parts[mIndex + 1];
+    }
+    // No -m flag, just return the CLI name
+    return parts[0];
+  }
+  return model;
+};
 
 const highlightText = (text, query) => {
   const source = String(text ?? "");
@@ -39,6 +60,38 @@ function AgentStartedIcon({ className = "" }) {
       aria-hidden="true"
     >
       <Bot className="w-7 h-7" />
+    </div>
+  );
+}
+
+function AgentStartedPulseIcon({ className = "" }) {
+  return (
+    <div className={`relative mx-auto w-14 h-14 ${className}`} aria-hidden="true">
+      <span className="absolute inset-0 rounded-full border border-black/30 dark:border-white/30 animate-ping" />
+      <div className="absolute inset-0 rounded-full border border-black dark:border-white flex items-center justify-center bg-white dark:bg-black">
+        <Bot className="w-7 h-7" />
+      </div>
+    </div>
+  );
+}
+
+function AgentCompletedIcon({ className = "" }) {
+  return (
+    <div className={`relative mx-auto w-14 h-14 ${className}`} aria-hidden="true">
+      <span className="absolute inset-0 rounded-full border border-black/20 dark:border-white/20 success-ring" />
+      <div className="absolute inset-0 rounded-full border-2 border-black dark:border-white bg-black text-white dark:bg-white dark:text-black flex items-center justify-center checkmark-pop">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="w-7 h-7 checkmark-draw"
+        >
+          <path d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
     </div>
   );
 }
@@ -143,7 +196,23 @@ function renderJsonWithHighlight(value) {
   return nodes;
 }
 
-export default function ContentCard({ item }) {
+function formatTokens(count) {
+  if (!count) return "0";
+  if (count >= 1_000_000) {
+    const v = (count / 1_000_000).toFixed(1).replace(/\.0$/, "");
+    return `${v}M`;
+  }
+  if (count >= 10_000) {
+    return `${Math.round(count / 1000)}k`;
+  }
+  if (count >= 1000) {
+    const v = (count / 1000).toFixed(1).replace(/\.0$/, "");
+    return `${v}k`;
+  }
+  return count.toString();
+}
+
+export default function ContentCard({ item, pageIndex = 0, history = [] }) {
   if (!item) return null;
 
   const time = new Date(item.timestamp).toLocaleTimeString([], {
@@ -155,6 +224,49 @@ export default function ContentCard({ item }) {
   const [promptQuery, setPromptQuery] = useState("");
   const [showRaw, setShowRaw] = useState(false);
   const [showPromptSearch, setShowPromptSearch] = useState(false);
+  const [showTokens, setShowTokens] = useState(false);
+  const [showTokenDetails, setShowTokenDetails] = useState(false);
+
+  // Calculate token stats: point-in-time (up to current page) and total (full session)
+  const tokenStats = useMemo(() => {
+    let pointInTime = { inputTokens: 0, outputTokens: 0 };
+    let total = { inputTokens: 0, outputTokens: 0, cost: 0 };
+    const agentBreakdown = [];
+
+    for (let i = 0; i < history.length; i++) {
+      const event = history[i];
+      if (event?.event === "AGENT_COMPLETED" && event.usage) {
+        const input = event.usage.inputTokens || 0;
+        const output = event.usage.outputTokens || 0;
+        const cached = event.usage.cachedTokens || 0;
+        const cost = event.usage.cost || 0;
+        total.inputTokens += input;
+        total.outputTokens += output;
+        total.cost += cost;
+        if (i <= pageIndex) {
+          pointInTime.inputTokens += input;
+          pointInTime.outputTokens += output;
+        }
+        agentBreakdown.push({
+          agent: event.agent || "Unknown",
+          model: event.model || null,
+          inputTokens: input,
+          outputTokens: output,
+          cachedTokens: cached,
+          cost: cost,
+          timestamp: event.timestamp,
+          index: i,
+        });
+      }
+    }
+
+    return {
+      pointInTime,
+      total,
+      agentBreakdown,
+      hasTokens: total.inputTokens > 0 || total.outputTokens > 0
+    };
+  }, [history, pageIndex]);
 
   // Full-auto countdown logic (must be at top level for hooks rules)
   const isInteractionEvent = item.event === "PROMPT_REQUESTED" || item.event === "INTERACTION_REQUESTED";
@@ -507,12 +619,23 @@ export default function ContentCard({ item }) {
     content = (
       <div className="space-y-10 py-6">
         <div className="space-y-3 text-center">
-          <AgentStartedIcon />
+          <AgentStartedPulseIcon />
           <div className="space-y-1">
             <div className="text-[11px] font-semibold tracking-[0.28em] uppercase text-black/50 dark:text-white/50">
               Agent started
             </div>
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight">{item.agent}</h2>
+            {item.model && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/5 dark:bg-white/10 text-xs font-mono text-black/60 dark:text-white/60">
+                {item.modelAlias && (
+                  <>
+                    <span className="font-semibold">{item.modelAlias}</span>
+                    <span className="text-black/30 dark:text-white/30">•</span>
+                  </>
+                )}
+                {formatModelName(item.model)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -543,8 +666,18 @@ export default function ContentCard({ item }) {
 
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold tracking-[0.24em] uppercase text-black/50 dark:text-white/50">
-              Prompt
+            <div className="flex items-center gap-3">
+              <div className="text-[11px] font-semibold tracking-[0.24em] uppercase text-black/50 dark:text-white/50">
+                Prompt
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPromptSearch(true)}
+                className="p-1.5 rounded-full text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                aria-label="Search prompt"
+              >
+                <Search className="w-4 h-4" />
+              </button>
             </div>
             {promptCountLabel ? (
               <div className="text-xs font-mono text-black/40 dark:text-white/40">
@@ -848,21 +981,56 @@ export default function ContentCard({ item }) {
       </div>
     );
   } else if (item.event === "AGENT_COMPLETED") {
+    const hasUsage = item.usage && (item.usage.inputTokens > 0 || item.usage.outputTokens > 0);
+
     content = (
       <div className="space-y-10 py-6">
         <div className="rounded-[28px] border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.04] p-6 sm:p-8 text-center space-y-4">
-          <AgentStartedIcon className="w-12 h-12" />
+          <AgentCompletedIcon className="w-12 h-12" />
           <div className="text-[11px] font-semibold tracking-[0.24em] uppercase text-black/50 dark:text-white/50">
             Agent completed
           </div>
           <div className="text-2xl sm:text-3xl font-black tracking-tight">
             {item.agent || "Agent"}
           </div>
-          {typeof item.attempts === "number" ? (
+
+          {/* Token usage display */}
+          {hasUsage && (
+            <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-black/50 dark:text-white/50">In:</span>
+                <span className="font-mono font-semibold">{formatTokenCount(item.usage.inputTokens)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-black/50 dark:text-white/50">Out:</span>
+                <span className="font-mono font-semibold">{formatTokenCount(item.usage.outputTokens)}</span>
+              </div>
+              {item.usage.cachedTokens > 0 && (
+                <div className="flex items-center gap-2 text-black/40 dark:text-white/40">
+                  <span>Cached:</span>
+                  <span className="font-mono">{formatTokenCount(item.usage.cachedTokens)}</span>
+                </div>
+              )}
+              {item.usage.cost > 0 && (
+                <div className="flex items-center gap-2 text-black/60 dark:text-white/60">
+                  <span className="font-mono font-semibold">${item.usage.cost.toFixed(4)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Model badge */}
+          {item.model && (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/5 dark:bg-white/10 text-xs font-mono text-black/60 dark:text-white/60">
+              {formatModelName(item.model)}
+            </div>
+          )}
+
+          {typeof item.attempts === "number" && (
             <div className="text-sm text-black/60 dark:text-white/60">
               {item.attempts} {item.attempts === 1 ? "attempt" : "attempts"}
             </div>
-          ) : null}
+          )}
         </div>
 
         {item.output !== undefined ? (
@@ -901,16 +1069,59 @@ export default function ContentCard({ item }) {
       <div className="content-width flex-1">
         <div className="flex flex-wrap items-center justify-between gap-4 pt-8 sm:pt-10 pb-6 border-b border-black/10 dark:border-white/10">
           <div className="flex items-center gap-3">
-            {item.event === "AGENT_STARTED" ? (
-              <button
-                type="button"
-                onClick={() => setShowPromptSearch(true)}
-                className="w-12 h-12 rounded-full bg-white text-black dark:bg-black dark:text-white border border-black/10 dark:border-white/10 flex items-center justify-center shadow-2xl shadow-black/20 dark:shadow-white/10 hover:scale-[1.02] transition-transform"
-                aria-label="Search prompt sections"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-            ) : null}
+            {tokenStats.hasTokens && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowTokens((prev) => !prev)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15 transition-colors"
+                  aria-expanded={showTokens}
+                  aria-label="Toggle token stats"
+                >
+                  <span className="text-black/50 dark:text-white/50">↑</span>
+                  <span>{formatTokens(tokenStats.pointInTime.inputTokens)}</span>
+                  <span className="text-black/50 dark:text-white/50">↓</span>
+                  <span>{formatTokens(tokenStats.pointInTime.outputTokens)}</span>
+                  <ChevronDown className={`w-3 h-3 text-black/40 dark:text-white/40 transition-transform ${showTokens ? "rotate-180" : ""}`} />
+                </button>
+                {showTokens && (
+                  <div className="absolute top-full left-0 mt-2 z-10 min-w-[200px] rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-black shadow-xl shadow-black/10 dark:shadow-white/5 p-4 space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-black/40 dark:text-white/40">
+                        Up to page {pageIndex + 1}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm font-mono">
+                        <span className="text-black/50 dark:text-white/50">↑</span>
+                        <span className="font-semibold">{tokenStats.pointInTime.inputTokens.toLocaleString()}</span>
+                        <span className="text-black/50 dark:text-white/50">↓</span>
+                        <span className="font-semibold">{tokenStats.pointInTime.outputTokens.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="border-t border-black/10 dark:border-white/10 pt-3 space-y-1">
+                      <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-black/40 dark:text-white/40">
+                        Session total
+                      </div>
+                      <div className="flex items-center gap-3 text-sm font-mono">
+                        <span className="text-black/50 dark:text-white/50">↑</span>
+                        <span className="font-semibold">{tokenStats.total.inputTokens.toLocaleString()}</span>
+                        <span className="text-black/50 dark:text-white/50">↓</span>
+                        <span className="font-semibold">{tokenStats.total.outputTokens.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowTokens(false);
+                        setShowTokenDetails(true);
+                      }}
+                      className="w-full mt-2 pt-3 border-t border-black/10 dark:border-white/10 text-[10px] font-semibold tracking-[0.16em] uppercase text-black/50 dark:text-white/50 hover:text-black dark:hover:text-white transition-colors text-center"
+                    >
+                      View details
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <RawToggle open={showRaw} onToggle={() => setShowRaw((prev) => !prev)} />
@@ -926,6 +1137,126 @@ export default function ContentCard({ item }) {
           content
         )}
       </div>
+
+      {/* Token Details Modal */}
+      {showTokenDetails && (
+        <div className="fixed inset-0 z-50 bg-white text-black dark:bg-black dark:text-white">
+          <div className="h-full w-full overflow-y-auto custom-scroll px-6 sm:px-10 py-10">
+            <div className="max-w-4xl mx-auto space-y-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-[11px] font-semibold tracking-[0.32em] uppercase text-black/50 dark:text-white/50">
+                    Token Usage Details
+                  </div>
+                  <div className="text-2xl font-bold">
+                    {tokenStats.agentBreakdown.length} agent {tokenStats.agentBreakdown.length === 1 ? "call" : "calls"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTokenDetails(false)}
+                  className="text-[10px] font-bold tracking-[0.2em] uppercase text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Totals Summary */}
+              <div className="rounded-[24px] border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.04] p-6">
+                <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-black/40 dark:text-white/40 mb-4">
+                  Session Totals
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  <div className="space-y-1">
+                    <div className="text-xs text-black/50 dark:text-white/50">Input Tokens</div>
+                    <div className="text-xl font-mono font-bold">{tokenStats.total.inputTokens.toLocaleString()}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-black/50 dark:text-white/50">Output Tokens</div>
+                    <div className="text-xl font-mono font-bold">{tokenStats.total.outputTokens.toLocaleString()}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-black/50 dark:text-white/50">Total Tokens</div>
+                    <div className="text-xl font-mono font-bold">{(tokenStats.total.inputTokens + tokenStats.total.outputTokens).toLocaleString()}</div>
+                  </div>
+                  {tokenStats.total.cost > 0 && (
+                    <div className="space-y-1">
+                      <div className="text-xs text-black/50 dark:text-white/50">Total Cost</div>
+                      <div className="text-xl font-mono font-bold">${tokenStats.total.cost.toFixed(4)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Agent Breakdown */}
+              <div className="space-y-4">
+                <div className="text-[10px] font-semibold tracking-[0.2em] uppercase text-black/40 dark:text-white/40">
+                  Per-Agent Breakdown
+                </div>
+                <div className="space-y-3">
+                  {tokenStats.agentBreakdown.map((agent, idx) => (
+                    <div
+                      key={`${agent.agent}-${idx}`}
+                      className="rounded-[20px] border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.04] p-5"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                        <div className="space-y-1">
+                          <div className="text-lg font-bold">{agent.agent}</div>
+                          <div className="flex items-center gap-2">
+                            {agent.model && (
+                              <span className="inline-flex px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/10 text-xs font-mono text-black/60 dark:text-white/60">
+                                {formatModelName(agent.model)}
+                              </span>
+                            )}
+                            <span className="text-xs text-black/40 dark:text-white/40">
+                              {new Date(agent.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        {agent.cost > 0 && (
+                          <div className="text-right">
+                            <div className="text-lg font-mono font-bold">${agent.cost.toFixed(4)}</div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-black/40 dark:text-white/40">Input</div>
+                          <div className="font-mono font-semibold">{agent.inputTokens.toLocaleString()}</div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-black/40 dark:text-white/40">Output</div>
+                          <div className="font-mono font-semibold">{agent.outputTokens.toLocaleString()}</div>
+                        </div>
+                        {agent.cachedTokens > 0 && (
+                          <div className="space-y-0.5">
+                            <div className="text-xs text-black/40 dark:text-white/40">Cached</div>
+                            <div className="font-mono font-semibold text-black/60 dark:text-white/60">{agent.cachedTokens.toLocaleString()}</div>
+                          </div>
+                        )}
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-black/40 dark:text-white/40">Total</div>
+                          <div className="font-mono font-semibold">{(agent.inputTokens + agent.outputTokens).toLocaleString()}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {tokenStats.agentBreakdown.length === 0 && (
+                <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.04] p-6 text-center text-black/50 dark:text-white/50">
+                  No token usage data available yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

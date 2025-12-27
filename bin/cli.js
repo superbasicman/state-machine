@@ -99,6 +99,7 @@ Options:
   --new, -n       Generate a new remote follow path
   --full-auto, -a Auto-select first option for choice interactions (no blocking)
   --delay, -d     Seconds to wait before auto-select in full-auto mode (default: 20)
+  --non-verbose, -q  Suppress per-agent token usage display (show only final summary)
   -reset          Reset workflow state before running
   -reset-hard     Hard reset workflow before running
   --help, -h      Show help
@@ -190,6 +191,50 @@ function summarizeStatus(state) {
   return state.status ? ` [${state.status}]` : '';
 }
 
+/**
+ * Display usage summary after workflow completion
+ */
+function displayUsageSummary(runtime) {
+  const u = runtime._usageTotals;
+  if (!u || (!u.totalInputTokens && !u.totalOutputTokens)) return;
+
+  const C = {
+    bold: '\x1b[1m',
+    dim: '\x1b[2m',
+    cyan: '\x1b[36m',
+    reset: '\x1b[0m'
+  };
+
+  const formatTokens = (count) => {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 10000) return `${Math.round(count / 1000)}k`;
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
+    return count.toString();
+  };
+
+  console.log(`\n${C.bold}Token Usage Summary${C.reset}`);
+  console.log(`${C.dim}${'─'.repeat(40)}${C.reset}`);
+  console.log(`  Input:  ${formatTokens(u.totalInputTokens)}`);
+  console.log(`  Output: ${formatTokens(u.totalOutputTokens)}`);
+  if (u.totalCachedTokens > 0) {
+    console.log(`  Cached: ${formatTokens(u.totalCachedTokens)}`);
+  }
+  console.log(`  ${C.bold}Total:  ${formatTokens(u.totalInputTokens + u.totalOutputTokens)}${C.reset}`);
+  if (u.totalCost > 0) {
+    console.log(`  ${C.cyan}Cost:   $${u.totalCost.toFixed(4)}${C.reset}`);
+  }
+
+  // Show per-model breakdown if multiple models used
+  const models = Object.keys(u.modelUsage || {});
+  if (models.length > 1) {
+    console.log(`\n${C.dim}By Model:${C.reset}`);
+    for (const model of models) {
+      const m = u.modelUsage[model];
+      console.log(`  ${model}: ${formatTokens(m.inputTokens)} in / ${formatTokens(m.outputTokens)} out`);
+    }
+  }
+}
+
 function listWorkflows() {
   const root = workflowsRoot();
 
@@ -242,7 +287,8 @@ async function runOrResume(
     preReset = false,
     preResetHard = false,
     fullAuto = false,
-    autoSelectDelay = null
+    autoSelectDelay = null,
+    nonVerbose = false
   } = {}
 ) {
   const workflowDir = resolveWorkflowDir(workflowName);
@@ -292,13 +338,7 @@ async function runOrResume(
     remoteUrl = process.env.STATE_MACHINE_REMOTE_URL || DEFAULT_REMOTE_URL;
   }
 
-  // Enable remote follow mode if we have a URL
-  if (remoteUrl) {
-    const sessionToken = ensureRemotePath(configFile, { forceNew: forceNewRemotePath });
-    await runtime.enableRemote(remoteUrl, { sessionToken, uiBaseUrl: useLocalServer });
-  }
-
-  // Set full-auto mode from CLI flag (will be merged with config.js during runWorkflow)
+  // Set full-auto mode from CLI flag BEFORE enabling remote (so session_init includes correct config)
   if (fullAuto) {
     runtime.workflowConfig.fullAuto = true;
     if (autoSelectDelay !== null) {
@@ -306,6 +346,17 @@ async function runOrResume(
     }
     const delay = runtime.workflowConfig.autoSelectDelay;
     console.log(`\n\x1b[36m\x1b[1m⚡ Full-auto mode enabled\x1b[0m - Agent will auto-select recommended options after ${delay}s countdown`);
+  }
+
+  // Enable remote follow mode if we have a URL
+  if (remoteUrl) {
+    const sessionToken = ensureRemotePath(configFile, { forceNew: forceNewRemotePath });
+    await runtime.enableRemote(remoteUrl, { sessionToken, uiBaseUrl: useLocalServer });
+  }
+
+  // Set non-verbose mode from CLI flag
+  if (nonVerbose) {
+    runtime.workflowConfig.nonVerbose = true;
   }
 
   // Prevent system sleep while workflow runs (macOS only)
@@ -317,6 +368,9 @@ async function runOrResume(
 
   try {
     await runtime.runWorkflow(workflowUrl);
+
+    // Display usage summary after workflow completion
+    displayUsageSummary(runtime);
   } finally {
     // Allow sleep again
     if (stopCaffeinate) {
@@ -385,6 +439,7 @@ async function main() {
         const preReset = args.includes('-reset');
         const preResetHard = args.includes('-reset-hard');
         const fullAuto = args.includes('--full-auto') || args.includes('-a');
+        const nonVerbose = args.includes('--non-verbose') || args.includes('-q') || args.includes('--quiet');
         const remoteEnabled = !useLocalServer; // Use Vercel if not local
 
         // Parse --delay or -d flag
@@ -405,7 +460,8 @@ async function main() {
             preReset,
             preResetHard,
             fullAuto,
-            autoSelectDelay
+            autoSelectDelay,
+            nonVerbose
           });
         } catch (err) {
           console.error('Error:', err.message || String(err));

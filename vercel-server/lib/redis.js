@@ -21,17 +21,19 @@ const KEYS = {
   history: (token) => `session:${token}:history`,
   events: (token) => `session:${token}:events`,
   interactions: (token) => `session:${token}:interactions`,
+  config: (token) => `session:${token}:config`,
 };
 
 /**
  * Create or update a session
  */
-export async function createSession(token, { workflowName, cliConnected = true }) {
+export async function createSession(token, { workflowName, cliConnected = true, config = null }) {
   const key = KEYS.meta(token);
   const data = {
     workflowName,
     cliConnected,
     createdAt: Date.now(),
+    config: config || { fullAuto: false, autoSelectDelay: 20 },
   };
 
   await redis.set(key, JSON.stringify(data), { ex: SESSION_TTL });
@@ -234,8 +236,36 @@ export async function deleteSession(token) {
   const keys = [
     KEYS.meta(token),
     `${KEYS.events(token)}:list`,
+    `${KEYS.config(token)}:pending`,
   ];
   await redis.del(...keys);
+}
+
+/**
+ * Push a config update to the pending queue (browser -> CLI)
+ */
+export async function pushConfigUpdate(token, config) {
+  const pendingKey = `${KEYS.config(token)}:pending`;
+  await redis.rpush(pendingKey, JSON.stringify(config));
+  await redis.expire(pendingKey, SESSION_TTL);
+}
+
+/**
+ * Peek at pending config update (for CLI polling)
+ */
+export async function peekConfigUpdate(token) {
+  const pendingKey = `${KEYS.config(token)}:pending`;
+  const pending = await redis.lindex(pendingKey, 0);
+  if (!pending) return null;
+  return typeof pending === 'object' ? pending : JSON.parse(pending);
+}
+
+/**
+ * Remove pending config update after CLI confirms receipt
+ */
+export async function popConfigUpdate(token) {
+  const pendingKey = `${KEYS.config(token)}:pending`;
+  await redis.lpop(pendingKey);
 }
 
 export { redis, KEYS, SESSION_TTL };

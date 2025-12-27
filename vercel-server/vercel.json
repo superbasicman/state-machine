@@ -28,6 +28,10 @@
       "dest": "/api/submit/[token].js?token=$1"
     },
     {
+      "src": "/api/config/([^/]+)",
+      "dest": "/api/config/[token].js?token=$1"
+    },
+    {
       "src": "/api/ws/cli",
       "dest": "/api/ws/cli.js"
     },
